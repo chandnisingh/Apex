@@ -35,6 +35,10 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.datatorrent.common.util.BaseOperator;
+import com.datatorrent.api.DefaultOutputPort;
+import com.datatorrent.api.InputOperator;
+import com.datatorrent.api.annotation.OutputPortFieldAnnotation;
+
 import com.datatorrent.stram.plan.logical.LogicalPlan;
 import com.datatorrent.stram.plan.logical.LogicalPlan.OperatorMeta;
 import com.datatorrent.stram.plan.logical.LogicalPlanConfiguration;
@@ -781,4 +785,46 @@ public class OperatorDiscoveryTest
     
   }
 
+  public static class SchemaRequiredOperator extends BaseOperator implements InputOperator
+  {
+    @OutputPortFieldAnnotation(schemaRequired = true)
+    public final transient DefaultOutputPort<Object> output = new DefaultOutputPort<Object>();
+
+    @OutputPortFieldAnnotation(schemaRequired = false)
+    public final transient DefaultOutputPort<Object> output1 = new DefaultOutputPort<Object>();
+
+    public final transient DefaultOutputPort<Object> output2 = new DefaultOutputPort<Object>();
+
+    @Override
+    public void emitTuples()
+    {
+    }
+  }
+
+  @Test
+  public void testPortSchema() throws Exception
+  {
+    String[] classFilePath = getClassFileInClasspath();
+    OperatorDiscoverer od = new OperatorDiscoverer(classFilePath);
+    od.buildTypeGraph();
+    JSONObject operatorJson = od.describeOperator(SchemaRequiredOperator.class);
+    JSONArray portsJson = operatorJson.getJSONArray("outputPorts");
+
+    Assert.assertEquals("no. of ports", 3, portsJson.length());
+
+    for (int i = 0; i < portsJson.length(); i++) {
+      JSONObject portJson = portsJson.getJSONObject(i);
+      String name = portJson.getString("name");
+      if (name.equals("output")) {
+        Assert.assertEquals("output schema", true, portJson.getBoolean("schemaRequired"));
+      }
+      else if (name.equals("output1")) {
+        Assert.assertEquals("output1 schema", false, portJson.getBoolean("schemaRequired"));
+      }
+      else if (name.equals("output2")) {
+        Assert.assertEquals("output2 schema", false, portJson.getBoolean("schemaRequired"));
+      }
+    }
+  }
 }
+

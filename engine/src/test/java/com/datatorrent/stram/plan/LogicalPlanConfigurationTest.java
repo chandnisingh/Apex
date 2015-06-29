@@ -679,6 +679,37 @@ public class LogicalPlanConfigurationTest {
     }
   }
 
+  @Test
+  public void testTupleClassNameAttr() throws Exception
+  {
+    String resourcePath = "/schemaTestTopology.json";
+    InputStream is = this.getClass().getResourceAsStream(resourcePath);
+    if (is == null) {
+      fail("Could not load " + resourcePath);
+    }
+    StringWriter writer = new StringWriter();
+
+    IOUtils.copy(is, writer);
+    JSONObject json = new JSONObject(writer.toString());
+
+    Configuration conf = new Configuration(false);
+
+    LogicalPlanConfiguration planConf = new LogicalPlanConfiguration(conf);
+    LogicalPlan dag = planConf.createFromJson(json, "testLoadFromJson");
+    dag.validate();
+
+    OperatorMeta operator1 = dag.getOperatorMeta("operator1");
+    assertEquals("operator1.classname", SchemaTestOperator.class, operator1.getOperator().getClass());
+
+    StreamMeta input1 = dag.getStream("inputStream");
+    assertNotNull(input1);
+    for (LogicalPlan.InputPortMeta targetPort : input1.getSinks()) {
+      Assert.assertEquals("tuple class name required", "com.datatorrent.generated.Schema", targetPort.getAttributes().get(PortContext.TUPLE_CLASS_NAME));
+    }
+
+    Assert.assertNull("tuple class name not required", input1.getSource().getAttributes().get(PortContext.TUPLE_CLASS_NAME));
+  }
+
   private static final Logger logger = LoggerFactory.getLogger(LogicalPlanConfigurationTest.class);
 
   public static class TestApplication implements StreamingApplication {
@@ -786,7 +817,7 @@ public class LogicalPlanConfigurationTest {
         return false;
       return true;
     }
-    
+
   }
 }
 

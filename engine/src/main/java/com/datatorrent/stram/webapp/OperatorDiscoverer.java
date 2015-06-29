@@ -22,8 +22,10 @@ import com.datatorrent.api.Operator.OutputPort;
 import com.datatorrent.api.annotation.*;
 import com.datatorrent.stram.webapp.TypeDiscoverer.UI_TYPE;
 import com.google.common.base.Predicate;
+import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 import java.beans.*;
@@ -40,7 +42,6 @@ import java.util.regex.Pattern;
 
 import javax.xml.parsers.*;
 
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
 import org.codehaus.jettison.json.*;
@@ -72,19 +73,32 @@ public class OperatorDiscoverer
   private static final Logger LOG = LoggerFactory.getLogger(OperatorDiscoverer.class);
   private final List<String> pathsToScan = new ArrayList<String>();
   private final ClassLoader classLoader;
-  private final String dtOperatorDoclinkPrefix = "https://www.datatorrent.com/docs/apidocs/index.html";
+  private static final String DT_OPERATOR_DOCLINK_PREFIX = "https://www.datatorrent.com/docs/apidocs/index.html";
   public static final String PORT_TYPE_INFO_KEY = "portTypeInfo";
   private final TypeGraph typeGraph = TypeGraphFactory.createTypeGraphProtoType();
+
+  private static final String USE_SCHEMA_TAG = "@useSchema";
+  private static final String DESCRIPTION_TAG = "@description";
+  private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+?");
+
+  private static final String SCHEMA_REQUIRED_KEY = "schemaRequired";
 
   private final Map<String, OperatorClassInfo> classInfo = new HashMap<String, OperatorClassInfo>();
 
   private static class OperatorClassInfo {
     String comment;
     final Map<String, String> tags = new HashMap<String, String>();
-    final Map<String, String> getMethods = new HashMap<String, String>();
-    final Map<String, String> setMethods = new HashMap<String, String>();
+    final Map<String, MethodInfo> getMethods = Maps.newHashMap();
+    final Map<String, MethodInfo> setMethods = Maps.newHashMap();
     final Set<String> invisibleGetSetMethods = new HashSet<String>();
     final Map<String, String> fields = new HashMap<String, String>();
+  }
+
+  private static class MethodInfo
+  {
+    Map<String, String> descriptions = Maps.newHashMap();
+    Map<String, String> useSchemas = Maps.newHashMap();
+    String comment;
   }
 
   private class JavadocSAXHandler extends DefaultHandler {
@@ -121,11 +135,21 @@ public class OperatorDiscoverer
       else if (qName.equalsIgnoreCase("tag")) {
         if (oci != null) {
           String tagName = attributes.getValue("name");
-          String tagText = attributes.getValue("text");
+          String tagText = attributes.getValue("text").trim();
           if (methodName != null) {
-            if("@omitFromUI".equals(tagName) && (isGetter(methodName) || isSetter(methodName)))
-            {
-              oci.invisibleGetSetMethods.add(methodName);
+            boolean lGetterCheck = isGetter(methodName);
+            boolean lSetterCheck = isSetter(methodName);
+
+            if (lGetterCheck || lSetterCheck) {
+              if ("@omitFromUI".equals(tagName)) {
+                oci.invisibleGetSetMethods.add(methodName);
+              }
+              else if (DESCRIPTION_TAG.equals(tagName)) {
+                addTagToMethod(lGetterCheck ? oci.getMethods : oci.setMethods, tagText, true);
+              }
+              else if (USE_SCHEMA_TAG.equals(tagName)) {
+                addTagToMethod(lGetterCheck ? oci.getMethods : oci.setMethods, tagText, false);
+              }
             }
 //            if ("@return".equals(tagName) && isGetter(methodName)) {
 //              oci.getMethods.put(methodName, tagText);
@@ -148,6 +172,25 @@ public class OperatorDiscoverer
       }
     }
 
+    private void addTagToMethod(Map<String, MethodInfo> methods, String tagText, boolean isDescription)
+    {
+      MethodInfo mi = methods.get(methodName);
+      if (mi == null) {
+        mi = new MethodInfo();
+        methods.put(methodName, mi);
+      }
+      String[] tagParts = Iterables.toArray(Splitter.on(WHITESPACE_PATTERN).trimResults().omitEmptyStrings().
+        limit(2).split(tagText), String.class);
+      if (tagParts.length == 2) {
+        if (isDescription) {
+          mi.descriptions.put(tagParts[0], tagParts[1]);
+        }
+        else {
+          mi.useSchemas.put(tagParts[0], tagParts[1]);
+        }
+      }
+    }
+
     @Override
     public void endElement(String uri, String localName, String qName) throws SAXException {
       if (qName.equalsIgnoreCase("class")) {
@@ -159,9 +202,19 @@ public class OperatorDiscoverer
         if (methodName != null) {
           // do nothing
           if (isGetter(methodName)) {
-            oci.getMethods.put(methodName, comment.toString());
+            MethodInfo mi = oci.getMethods.get(methodName);
+            if (mi == null) {
+              mi = new MethodInfo();
+              oci.getMethods.put(methodName, mi);
+            }
+            mi.comment = comment.toString();
           } else if (isSetter(methodName)) {
-            oci.setMethods.put(methodName, comment.toString());
+            MethodInfo mi = oci.setMethods.get(methodName);
+            if (mi == null) {
+              mi = new MethodInfo();
+              oci.setMethods.put(methodName, mi);
+            }
+            mi.comment = comment.toString();
           }
         }
         else if (fieldName != null) {
@@ -416,9 +469,11 @@ public class OperatorDiscoverer
             InputPortFieldAnnotation inputAnnotation = field.getAnnotation(InputPortFieldAnnotation.class);
             if (inputAnnotation != null) {
               inputPort.put("optional", inputAnnotation.optional());
+              inputPort.put(SCHEMA_REQUIRED_KEY, inputAnnotation.schemaRequired());
             }
             else {
               inputPort.put("optional", false); // input port that is not annotated is default to be not optional
+              inputPort.put(SCHEMA_REQUIRED_KEY, false);
             }
 
             inputPorts.put(inputPort);
@@ -442,10 +497,12 @@ public class OperatorDiscoverer
             if (outputAnnotation != null) {
               outputPort.put("optional", outputAnnotation.optional());
               outputPort.put("error", outputAnnotation.error());
+              outputPort.put(SCHEMA_REQUIRED_KEY, outputAnnotation.schemaRequired());
             }
             else {
               outputPort.put("optional", true); // output port that is not annotated is default to be optional
               outputPort.put("error", false);
+              outputPort.put(SCHEMA_REQUIRED_KEY, false);
             }
 
             outputPorts.put(outputPort);
@@ -496,7 +553,7 @@ public class OperatorDiscoverer
           }
           else if (clazz.getName().startsWith("com.datatorrent.lib.") ||
                   clazz.getName().startsWith("com.datatorrent.contrib.")) {
-            response.put("doclink", dtOperatorDoclinkPrefix + "?" + getDocName(clazz));
+            response.put("doclink", DT_OPERATOR_DOCLINK_PREFIX + "?" + getDocName(clazz));
           }
         }
       }
@@ -526,10 +583,10 @@ public class OperatorDiscoverer
       if (oci.invisibleGetSetMethods.contains(getPrefix + propName) || oci.invisibleGetSetMethods.contains(setPrefix + propName)) {
         continue;
       }
-      String desc = oci.setMethods.get(setPrefix + propName);
-      desc = desc == null ? oci.getMethods.get(getPrefix + propName) : desc;
-      if (desc != null) {
-        propJ.put("description", desc);
+      MethodInfo methodInfo = oci.setMethods.get(setPrefix + propName);
+      methodInfo = methodInfo == null ? oci.getMethods.get(getPrefix + propName) : methodInfo;
+      if (methodInfo != null) {
+        addTagsToProperties(methodInfo, propJ);
       }
       result.put(propJ);
     }
@@ -545,6 +602,30 @@ public class OperatorDiscoverer
       return oci;
     } else {
       return getOperatorClassWithGetterSetter(operatorClass.getSuperclass(), setterName, getterName);
+    }
+  }
+
+  private void addTagsToProperties(MethodInfo mi, JSONObject propJ) throws JSONException
+  {
+    //create description object
+    JSONObject descriptionObj = new JSONObject();
+    if (mi.comment != null) {
+      descriptionObj.put("$", mi.comment);
+    }
+    for (Map.Entry<String, String> descEntry : mi.descriptions.entrySet()) {
+      descriptionObj.put(descEntry.getKey(), descEntry.getValue());
+    }
+    if (descriptionObj.length() > 0) {
+      propJ.put("descriptions", descriptionObj);
+    }
+
+    //create userSchema object
+    JSONObject useSchemaObj = new JSONObject();
+    for (Map.Entry<String, String> useSchemaEntry : mi.useSchemas.entrySet()) {
+      useSchemaObj.put(useSchemaEntry.getKey(), useSchemaEntry.getValue());
+    }
+    if (useSchemaObj.length() > 0) {
+      propJ.put("useSchema", useSchemaObj);
     }
   }
 
@@ -620,9 +701,9 @@ public class OperatorDiscoverer
               for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
                 OperatorClassInfo oci = classInfo.get(c.getName());
                 if (oci != null) {
-                  String getMethodDesc = oci.getMethods.get(readMethod.getName());
-                  if (getMethodDesc != null) {
-                    propertyObj.put("description", oci.getMethods.get(readMethod.getName()));
+                  MethodInfo getMethodInfo = oci.getMethods.get(readMethod.getName());
+                  if (getMethodInfo != null) {
+                    addTagsToProperties(getMethodInfo, propertyObj);
                     break;
                   }
                 }

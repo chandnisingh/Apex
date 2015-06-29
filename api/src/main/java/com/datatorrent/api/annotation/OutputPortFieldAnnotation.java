@@ -40,4 +40,12 @@ public @interface OutputPortFieldAnnotation {
    * <p>error.</p>
    */
   public boolean error() default false;
+
+  /**
+   * Whether this port needs to have a tuple schema. When true, the users have to either assign a
+   * schema or a POJO class on the stream connecting this port.
+   *
+   * @return  true if schema is required; false otherwise.
+   */
+  public boolean schemaRequired() default false;
 }

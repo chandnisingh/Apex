@@ -138,7 +138,7 @@ public class OperatorDiscoverer
           String tagText = attributes.getValue("text").trim();
           if (methodName != null) {
             boolean lGetterCheck = isGetter(methodName);
-            boolean lSetterCheck = isSetter(methodName);
+            boolean lSetterCheck = !lGetterCheck && isSetter(methodName);
 
             if (lGetterCheck || lSetterCheck) {
               if ("@omitFromUI".equals(tagName)) {

@@ -75,25 +75,6 @@
                <includeScope>runtime</includeScope>
              </configuration>
            </execution>
-           <execution>
-             <id>unpack</id>
-             <phase>package</phase>
-             <goals>
-               <goal>unpack</goal>
-             </goals>
-             <configuration>
-               <artifactItems>
-                 <artifactItem>
-                   <groupId>${project.groupId}</groupId>
-                   <artifactId>${project.artifactId}</artifactId>
-                   <version>${project.version}</version>
-                   <type>jar</type>
-                   <includes>META-INF/MANIFEST.MF</includes>
-                   <outputDirectory>target</outputDirectory>
-                 </artifactItem>
-               </artifactItems>
-             </configuration>
-           </execution>
          </executions>
        </plugin>
 
@@ -150,12 +131,27 @@
        </plugin>
 
        <plugin>
-         <groupId>org.apache.maven.plugins</groupId>
-         <artifactId>maven-install-plugin</artifactId>
-         <version>2.5.2</version>
-         <configuration>
-           <skip>true</skip>
-         </configuration>
+         <groupId>org.codehaus.mojo</groupId>
+         <artifactId>build-helper-maven-plugin</artifactId>
+         <version>1.9.1</version>
+         <executions>
+           <execution>
+             <id>attach-artifacts</id>
+             <phase>package</phase>
+             <goals>
+               <goal>attach-artifact</goal>
+             </goals>
+             <configuration>
+               <artifacts>
+                 <artifact>
+                   <file>target/${project.artifactId}-${project.version}.apa</file>
+                   <type>apa</type>
+                 </artifact>
+               </artifacts>
+               <skipAttach>false</skipAttach>
+             </configuration>
+           </execution>
+         </executions>
        </plugin>
 
     </plugins>
@@ -182,7 +178,7 @@
     </dependency>
     <dependency>
       <groupId>com.datatorrent</groupId>
-      <artifactId>dt-engine</artifactId>
+      <artifactId>dt-common</artifactId>
       <version>${datatorrent.version}</version>
       <scope>provided</scope>
     </dependency>
@@ -191,6 +187,19 @@
       <artifactId>junit</artifactId>
       <version>4.10</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.datatorrent</groupId>
+      <artifactId>malhar-library</artifactId>
+      <version>${datatorrent.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
   </dependencies>
 

@@ -61,6 +61,8 @@ import org.xml.sax.helpers.DefaultHandler;
  */
 public class OperatorDiscoverer
 {
+  public static final String GENERATED_CLASSES_JAR = "dt-generated-classes.jar";
+
   private static class ClassComparator implements Comparator<Class<?>> {
 
     @Override
@@ -295,6 +297,9 @@ public class OperatorDiscoverer
         try {
           f = new File(path);
           if (!f.exists() || f.isDirectory() || (!f.getName().endsWith("jar") && !f.getName().endsWith("class"))) {
+            continue;
+          }
+          if(GENERATED_CLASSES_JAR.equals(f.getName())) {
             continue;
           }
           if (f.getName().endsWith("class")) {

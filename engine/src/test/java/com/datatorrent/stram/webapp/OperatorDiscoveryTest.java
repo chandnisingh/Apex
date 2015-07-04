@@ -34,10 +34,12 @@ import org.codehaus.jettison.json.JSONObject;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.datatorrent.common.util.BaseOperator;
+import com.datatorrent.api.DefaultInputPort;
 import com.datatorrent.api.DefaultOutputPort;
-import com.datatorrent.api.InputOperator;
+import com.datatorrent.api.annotation.InputPortFieldAnnotation;
 import com.datatorrent.api.annotation.OutputPortFieldAnnotation;
+import com.datatorrent.common.util.BaseOperator;
+import com.datatorrent.api.InputOperator;
 
 import com.datatorrent.stram.plan.logical.LogicalPlan;
 import com.datatorrent.stram.plan.logical.LogicalPlan.OperatorMeta;
@@ -50,6 +52,119 @@ public class OperatorDiscoveryTest
 {
 //  private static final Logger LOG = LoggerFactory.getLogger(OperatorDiscoveryTest.class);
   
+  public static class GenericClassBase<T> extends BaseOperator
+  {
+    private int A;
+    private T B;
+    @InputPortFieldAnnotation(optional = true)
+    public transient final DefaultInputPort<T> input = new DefaultInputPort<T>() {
+      @Override
+      public void process(T tuple) {
+        output.emit("abcd");
+      }
+    };
+
+    public transient final DefaultInputPort<T> input1 = new DefaultInputPort<T>() {
+      public void process(T tuple) {
+        // Do nothing
+      }
+    };
+
+    @OutputPortFieldAnnotation(optional = false, error= true)
+    public transient final DefaultOutputPort<String> output = new DefaultOutputPort<String>();
+
+    public transient final DefaultOutputPort<Double> output1 = new DefaultOutputPort<Double>();
+
+    public String getName()
+    {
+      return "abc";
+    }
+
+    public int getA() {
+      return A;
+    }
+
+    public void setA(int a) {
+      A = a;
+    }
+
+    public T getB() {
+      return B;
+    }
+
+    public void setB(T b) {
+      B = b;
+    }
+  }
+
+  public static class SubClassGeneric<K extends Number> extends GenericClassBase<K>
+  {
+
+  }
+
+  public static class SubSubClassGeneric<T extends Long> extends SubClassGeneric<T>
+  {
+
+  }
+
+  @Test
+  public void testOperatorDiscoverer() throws Exception
+  {
+    String[] classFilePath = getClassFileInClasspath();
+    OperatorDiscoverer operatorDiscoverer = new OperatorDiscoverer(classFilePath);
+    operatorDiscoverer.buildTypeGraph();
+    JSONObject oper = operatorDiscoverer.describeOperator(SubSubClassGeneric.class);
+    System.out.println(oper);
+    String debug = "\n(ASM)type info for " + TestOperator.class + ":\n" + oper.toString(2) + "\n";
+
+    JSONArray props = oper.getJSONArray("properties");
+    JSONArray portTypes = oper.getJSONArray("portTypeInfo");
+    JSONArray inputPorts = oper.getJSONArray("inputPorts");
+    JSONArray outputPorts = oper.getJSONArray("outputPorts");
+
+    Assert.assertNotNull(debug + "Properties aren't null ", props);
+    Assert.assertEquals(debug + "Number of properties ", 3, props.length());
+
+    Assert.assertNotNull(debug + "Port types aren't null ", portTypes);
+    Assert.assertEquals(debug + "Number of port types ", 4, portTypes.length());
+
+    Assert.assertNotNull(debug + "inputPorts aren't null ", inputPorts);
+    Assert.assertEquals(debug + "Number of inputPorts ", 2, inputPorts.length());
+
+    Assert.assertNotNull(debug + "outputPorts aren't null ", outputPorts);
+    Assert.assertEquals(debug + "Number of outputPorts ", 2, outputPorts.length());
+
+    // Validate port types
+    JSONObject portType = (JSONObject)portTypes.get(0);
+    Assert.assertEquals(portType.get("name"), "input");
+    Assert.assertEquals(portType.get("typeLiteral"), "T");
+    Assert.assertEquals(portType.get("type"), "java.lang.Long");
+
+    portType = (JSONObject)portTypes.get(2);
+    Assert.assertEquals(portType.get("name"), "output");
+    Assert.assertEquals(portType.get("type"), "java.lang.String");
+
+    // Validate input port annotations
+    JSONObject inputPort = (JSONObject)inputPorts.get(0);
+    Assert.assertEquals(inputPort.get("name"), "input");
+    Assert.assertEquals(inputPort.get("optional"), true);
+
+    inputPort = (JSONObject)inputPorts.get(1);
+    Assert.assertEquals(inputPort.get("name"), "input1");
+    Assert.assertEquals(inputPort.get("optional"), false);
+
+    // Validate output port annotations
+    JSONObject outPort = (JSONObject)outputPorts.get(0);
+    Assert.assertEquals(outPort.get("name"), "output");
+    Assert.assertEquals(outPort.get("optional"), false);
+    Assert.assertEquals(outPort.get("error"), true);
+
+    outPort = (JSONObject)outputPorts.get(1);
+    Assert.assertEquals(outPort.get("name"), "output1");
+    Assert.assertEquals(outPort.get("optional"), true);
+    Assert.assertEquals(outPort.get("error"), false);
+  }
+
   @Test
   public void testPropertyDiscovery() throws Exception
   {
@@ -67,7 +182,7 @@ public class OperatorDiscoveryTest
 
     JSONArray props = asmDesc.getJSONArray("properties");
     Assert.assertNotNull(debug + "Properties aren't null ", props);
-    Assert.assertEquals(debug + "Number of properties ", 27, props.length());
+    Assert.assertEquals(debug + "Number of properties ", 28, props.length());
 
     JSONObject mapProperty = getJSONProperty(props, "map");
     Assert.assertEquals(debug + "canGet " + mapProperty, true, mapProperty.get("canGet"));
@@ -125,7 +240,8 @@ public class OperatorDiscoveryTest
     JSONObject aObj = getJSONProperty(props, "a");
     Assert.assertEquals("type " + aObj, Number.class.getName(), aObj.get("type"));
     JSONObject bObj = getJSONProperty(props, "b");
-    Assert.assertEquals("type " + bObj, "long", bObj.get("type"));
+    Assert.assertEquals("type " + bObj, "java.lang.Long", bObj.get("type"));
+    Assert.assertEquals("type " + bObj, "long", bObj.get("uiType"));
     JSONObject cObj = getJSONProperty(props, "c");
     Assert.assertEquals("type " + cObj, List.class.getName(), cObj.get("type"));
     JSONObject dObj = getJSONProperty(props, "d");
@@ -133,18 +249,28 @@ public class OperatorDiscoveryTest
     JSONObject eObj = getJSONProperty(props, "e");
     Assert.assertEquals("type " + eObj, Runnable.class.getName(), eObj.get("type"));
 
+    // describeClassByASM now populates portTypes too, so checking only properties part
     ObjectMapper om = new ObjectMapper();
     desc = od.describeClass(Structured.class);
     asmDesc = od.describeClassByASM(Structured.class.getName());
-    Assert.assertEquals("\ntype info for " + Structured.class + ":\n",  om.readTree(desc.toString()), om.readTree(asmDesc.toString()));
+    Assert.assertEquals("\ntype info for " + Structured.class + ":\n",  om.readTree(desc.get("properties").toString()), om.readTree(asmDesc.get("properties").toString()));
 
     desc = od.describeClass(Color.class);
     asmDesc = od.describeClassByASM(Color.class.getName());
-    Assert.assertEquals("\ntype info for " + Color.class + ":\n", om.readTree(desc.toString()), om.readTree(asmDesc.toString()));
+    Assert.assertEquals("\ntype info for " + Color.class + ":\n", om.readTree(desc.get("properties").toString()), om.readTree(asmDesc.get("properties").toString()));
+
+    // test uitype for wrapper type
+    asmDesc = od.describeClassByASM(Integer.class.getName());
+    Assert.assertEquals("type info for" + Integer.class + ":\n" + asmDesc.toString(2), "int", asmDesc.getString("uiType"));
+
+    // test uitype for FromStringSerializer supported type
+    asmDesc = od.describeClassByASM(URI.class.getName());
+    Assert.assertEquals("type info for" + URI.class + ":\n" + asmDesc.toString(2), "java.lang.String", asmDesc.getString("uiType"));
+
 
   }
 
-  private String[] getClassFileInClasspath()
+  public static String[] getClassFileInClasspath()
   {
     String classpath = System.getProperty("java.class.path");
     String[] paths = classpath.split(":");
@@ -200,6 +326,12 @@ public class OperatorDiscoveryTest
     for (String expectedClass : jdkQueue) {
       Assert.assertTrue("Actual queue: " + actualQueueClass.toString() + "\n Expected contained queue: " + expectedClass, actualQueueClass.contains(expectedClass));
     }
+
+    List<String> expectedNumberClasses = Lists.newArrayList(Byte.class.getName(), Short.class.getName(), Long.class.getName(), Integer.class.getName(), Double.class.getName(), Float.class.getName());
+
+    List<String> actualNumberClasses = od.getTypeGraph().getInitializableDescendants(Number.class.getName());
+
+    Assert.assertTrue("Actual Number types: " + actualNumberClasses.toString() + "\n Expected contained types: " + expectedNumberClasses, actualNumberClasses.containsAll(expectedNumberClasses));
 
   }
 
@@ -353,11 +485,20 @@ public class OperatorDiscoveryTest
     private URI uri;
     private String realName = "abc";
     private String getterOnly = "getterOnly";
-    
+
     // this property can not be deserialized by jackson but it will be ignored if it has no setter method
     private Map<Class, String> mProp;
-    
-    
+
+    private Class aClass = Object.class;
+
+    public Class getaClass() {
+      return aClass;
+    }
+
+    public void setaClass(Class aClass) {
+      this.aClass = aClass;
+    }
+
     public Map<Class, String> getmProp()
     {
       return mProp;

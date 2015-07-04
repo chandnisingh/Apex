@@ -12,10 +12,7 @@
         {
           "name": "outport",
           "attributes": {
-            "UNIFIER_LIMIT": 8,
-            "STREAM_CODEC": {
-              "com.datatorrent.lib.codec.JsonStreamCodec": {}
-            }
+            "UNIFIER_LIMIT": 8
           }
         }
       ]

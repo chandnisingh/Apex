@@ -23,8 +23,6 @@ You acknowledge that your submissions to this repository are made pursuant the t
   * Create a GitHub pull request from your repository, providing as many details about your changes as possible
   * After review and acceptance one of the committers will merge the pull request.
 
-The submitted code must follow certain prescribed conventions and it is also recommended that it follow the prescribed style. The conventions and style are described in the [Coding Conventions and Style](docs/CodingConventionsAndStyle.md) document.
-
 When adding **new files**, please include the following Apache v2.0 license header at the top of the file, with the fields enclosed by brackets "[]" replaced with your own identifying information **(don't include the brackets!)**:
 ```java
 /**
@@ -59,6 +57,16 @@ Type help to list available commands.
 
 Pre-built distributions (see [README](https://www.datatorrent.com/docs/README.html)) are available from
 https://www.datatorrent.com/download/
+
+##Issue tracking
+
+[Apex JIRA](https://malhar.atlassian.net/projects/APEX) issue tracking system is used for this project.
+You can submit new issues and track the progress of existing issues at https://malhar.atlassian.net/projects/APEX.
+
+When working with JIRA to submit pull requests, please use [smart commits](https://confluence.atlassian.com/display/AOD/Processing+JIRA+issues+with+commit+messages) feature by specifying APEX-XXXX in the commit messages.
+It helps us link commits with issues being tracked for easy reference.  And example commit might look like this:
+
+    git commit -am "APEX-1234 #comment Task completed ahead of schedule #resolve"
 
 ##License
 

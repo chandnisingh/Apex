@@ -21,6 +21,8 @@ import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.util.*;
 
+import javax.validation.ValidationException;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
@@ -711,6 +713,35 @@ public class LogicalPlanConfigurationTest {
     }
 
     Assert.assertNull("tuple class name not required", input1.getSource().getAttributes().get(PortContext.TUPLE_CLASS_NAME));
+  }
+
+  @Test
+  public void testTupleClassNameAttrValidation() throws Exception
+  {
+    String resourcePath = "/schemaTestTopology.json";
+    InputStream is = this.getClass().getResourceAsStream(resourcePath);
+    if (is == null) {
+      fail("Could not load " + resourcePath);
+    }
+    StringWriter writer = new StringWriter();
+
+    IOUtils.copy(is, writer);
+    JSONObject json = new JSONObject(writer.toString());
+
+    //removing schema so that validation fails
+    json.getJSONArray("streams").getJSONObject(0).remove("schema");
+    Configuration conf = new Configuration(false);
+
+    LogicalPlanConfiguration planConf = new LogicalPlanConfiguration(conf);
+    LogicalPlan dag = planConf.createFromJson(json, "testLoadFromJson");
+
+    try {
+      dag.validate();
+      Assert.fail();
+    }
+    catch (ValidationException ve) {
+      //test pass as validation exception was thrown.
+    }
   }
 
   private static final Logger logger = LoggerFactory.getLogger(LogicalPlanConfigurationTest.class);

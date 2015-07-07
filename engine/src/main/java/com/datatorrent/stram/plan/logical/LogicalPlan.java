@@ -1126,6 +1126,13 @@ public class LogicalPlan implements Serializable, DAG
             }
           }
         }
+
+        if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
+          //since schema is required, the port attribute tuple_class_name should be present
+          if (pm.attributes.get(PortContext.TUPLE_CLASS_NAME) == null) {
+            throw new ValidationException("Attribute tuple class name missing on port : " + n.name + "." + pm.getPortName());
+          }
+        }
       }
 
       boolean allPortsOptional = true;
@@ -1136,6 +1143,13 @@ public class LogicalPlan implements Serializable, DAG
           }
         }
         allPortsOptional &= (pm.portAnnotation != null && pm.portAnnotation.optional());
+
+        if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
+          //since schema is required, the port attribute tuple_class_name should be present
+          if (pm.attributes.get(PortContext.TUPLE_CLASS_NAME) == null) {
+            throw new ValidationException("Attribute tuple class name missing on port : " + n.name + "." + pm.getPortName());
+          }
+        }
       }
       if (!allPortsOptional && n.outputStreams.isEmpty()) {
         throw new ValidationException("At least one output port must be connected: " + n.name);

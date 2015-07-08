@@ -1125,12 +1125,12 @@ public class LogicalPlan implements Serializable, DAG
               validateThreadLocal(n);
             }
           }
-        }
 
-        if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
-          //since schema is required, the port attribute tuple_class_name should be present
-          if (pm.attributes.get(PortContext.TUPLE_CLASS_NAME) == null) {
-            throw new ValidationException("Attribute tuple class name missing on port : " + n.name + "." + pm.getPortName());
+          if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
+            //since schema is required, the port attribute tuple_class_name should be present
+            if (pm.attributes.get(PortContext.TUPLE_CLASS_NAME) == null) {
+              throw new ValidationException("Attribute tuple class name missing on port : " + n.name + "." + pm.getPortName());
+            }
           }
         }
       }
@@ -1142,14 +1142,16 @@ public class LogicalPlan implements Serializable, DAG
             throw new ValidationException("Output port connection required: " + n.name + "." + pm.getPortName());
           }
         }
-        allPortsOptional &= (pm.portAnnotation != null && pm.portAnnotation.optional());
-
-        if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
-          //since schema is required, the port attribute tuple_class_name should be present
-          if (pm.attributes.get(PortContext.TUPLE_CLASS_NAME) == null) {
-            throw new ValidationException("Attribute tuple class name missing on port : " + n.name + "." + pm.getPortName());
+        else {
+          //port is connected
+          if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
+            //since schema is required, the port attribute tuple_class_name should be present
+            if (pm.attributes.get(PortContext.TUPLE_CLASS_NAME) == null) {
+              throw new ValidationException("Attribute tuple class name missing on port : " + n.name + "." + pm.getPortName());
+            }
           }
         }
+        allPortsOptional &= (pm.portAnnotation != null && pm.portAnnotation.optional());
       }
       if (!allPortsOptional && n.outputStreams.isEmpty()) {
         throw new ValidationException("At least one output port must be connected: " + n.name);

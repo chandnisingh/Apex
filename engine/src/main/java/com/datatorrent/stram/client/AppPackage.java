@@ -15,6 +15,8 @@
  */
 package com.datatorrent.stram.client;
 
+import org.codehaus.jackson.annotate.JsonIgnoreProperties;
+
 import com.datatorrent.stram.client.StramAppLauncher.AppFactory;
 import com.datatorrent.stram.plan.logical.LogicalPlan;
 import java.io.*;
@@ -36,6 +38,7 @@ import org.slf4j.LoggerFactory;
  *
  * @since 1.0.3
  */
+@JsonIgnoreProperties({"appNameToJsonFile"})
 public class AppPackage extends JarFile implements Closeable
 {
   public static final String ATTRIBUTE_DT_ENGINE_VERSION = "DT-Engine-Version";
@@ -56,6 +59,9 @@ public class AppPackage extends JarFile implements Closeable
   private final List<AppInfo> applications = new ArrayList<AppInfo>();
   private final List<String> appJars = new ArrayList<String>();
   private final List<String> appJsonFiles = new ArrayList<String>();
+
+  private final transient Map<String, File> appNameToJsonFile = new HashMap<>();
+
   private final List<String> appPropertiesFiles = new ArrayList<String>();
 
   private final Set<String> requiredProperties = new TreeSet<String>();
@@ -235,6 +241,11 @@ public class AppPackage extends JarFile implements Closeable
     return Collections.unmodifiableList(appJsonFiles);
   }
 
+  public Map<String, File> getAppNameToJsonFile()
+  {
+    return Collections.unmodifiableMap(appNameToJsonFile);
+  }
+
   public List<String> getAppPropertiesFiles()
   {
     return Collections.unmodifiableList(appPropertiesFiles);
@@ -300,14 +311,18 @@ public class AppPackage extends JarFile implements Closeable
     }
     config.set(StramAppLauncher.LIBJARS_CONF_KEY_NAME, StringUtils.join(absClassPath, ','));
     files = dir.listFiles();
+    final int extLen = ".json".length();
     for (File entry : files) {
-      if (entry.getName().endsWith(".json")) {
-        appJsonFiles.add(entry.getName());
+      final String name = entry.getName();
+      if (name.endsWith(".json")) {
+        appJsonFiles.add(name);
+        String base = name.substring(0, name.length() - extLen);    // strip extension
+        appNameToJsonFile.put(base, entry);
         try {
           AppFactory appFactory = new StramAppLauncher.JsonFileAppFactory(entry);
-          StramAppLauncher stramAppLauncher = new StramAppLauncher(entry.getName(), config);
+          StramAppLauncher stramAppLauncher = new StramAppLauncher(name, config);
           stramAppLauncher.loadDependencies();
-          AppInfo appInfo = new AppInfo(appFactory.getName(), entry.getName(), "json");
+          AppInfo appInfo = new AppInfo(appFactory.getName(), name, "json");
           appInfo.displayName = appFactory.getDisplayName();
           try {
             appInfo.dag = appFactory.createApp(stramAppLauncher.getLogicalPlanConfiguration());
@@ -318,15 +333,15 @@ public class AppPackage extends JarFile implements Closeable
           }
           applications.add(appInfo);
         } catch (Exception ex) {
-          LOG.error("Caught exceptions trying to process {}", entry.getName(), ex);
+          LOG.error("Caught exceptions trying to process {}", name, ex);
         }
-      } else if (entry.getName().endsWith(".properties")) {
-        appPropertiesFiles.add(entry.getName());
+      } else if (name.endsWith(".properties")) {
+        appPropertiesFiles.add(name);
         try {
           AppFactory appFactory = new StramAppLauncher.PropertyFileAppFactory(entry);
-          StramAppLauncher stramAppLauncher = new StramAppLauncher(entry.getName(), config);
+          StramAppLauncher stramAppLauncher = new StramAppLauncher(name, config);
           stramAppLauncher.loadDependencies();
-          AppInfo appInfo = new AppInfo(appFactory.getName(), entry.getName(), "properties");
+          AppInfo appInfo = new AppInfo(appFactory.getName(), name, "properties");
           appInfo.displayName = appFactory.getDisplayName();
           try {
             appInfo.dag = appFactory.createApp(stramAppLauncher.getLogicalPlanConfiguration());
@@ -337,10 +352,10 @@ public class AppPackage extends JarFile implements Closeable
           }
           applications.add(appInfo);
         } catch (Exception ex) {
-          LOG.error("Caught exceptions trying to process {}", entry.getName(), ex);
+          LOG.error("Caught exceptions trying to process {}", name, ex);
         }
-      } else if (!entry.getName().endsWith(".jar")) {
-        LOG.warn("Ignoring file {} with unknown extension in app directory", entry.getName());
+      } else if (!name.endsWith(".jar")) {
+        LOG.warn("Ignoring file {} with unknown extension in app directory", name);
       }
     }
   }

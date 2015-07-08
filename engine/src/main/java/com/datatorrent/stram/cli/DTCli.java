@@ -1471,14 +1471,18 @@ public class DTCli
 
   private void handleException(Exception e)
   {
+    StringBuilder sb = new StringBuilder();
     String msg = e.getMessage();
+    if (null != msg) {
+      sb.append(msg);
+    }
     Throwable cause = e.getCause();
     if (cause != null && cause.getMessage() != null) {
-      msg += ": " + cause.getMessage();
+      sb.append(": ");
+      sb.append(cause.getMessage());
     }
-    if (msg != null) {
-      System.err.println(msg);
-    }
+    sb.append(Arrays.toString(e.getStackTrace()));
+    System.err.println(sb.toString());
     LOG.error("Exception caught: ", e);
     lastCommandError = true;
   }
@@ -3413,6 +3417,85 @@ public class DTCli
 
   }
 
+  // parse content of file into JSON object and return it
+  private static JSONObject parseJsonFile(File path)
+  {
+    if (! path.isFile() || 0 == path.length()) {    // not a plain file or is empty
+      return null;
+    }
+
+    // read file into JSON object
+    JSONObject result = null;
+    BufferedInputStream in = null;
+    try {
+      in = new BufferedInputStream(new FileInputStream(path));
+      StringWriter sw = new StringWriter();
+      IOUtils.copy(in, sw);
+      result = new JSONObject(sw.toString());
+      return result;
+    }
+    catch (FileNotFoundException e) {
+      final String msg = "File not found: {}"; 
+      LOG.warn(msg, path);
+      throw new CliException(msg, e);
+    }
+    catch (IOException e) {
+      final String msg = "IOException for: {}"; 
+      LOG.warn(msg, path);
+      throw new CliException(msg, e);
+    }
+    catch (JSONException e) {
+      final String msg = "JSONException for: {}"; 
+      LOG.warn(msg, path);
+      throw new CliException(msg, e);
+    }
+    finally {
+      IOUtils.closeQuietly(in);
+    }
+  }
+
+  // utility function: for JSON apps, replace 'dag' field with 'fileContent' whose value
+  // is the content of the application json file
+  //
+  private void fixJSONApps(AppPackage ap, JSONObject apInfo)
+  {
+    Map<String, File> appNameToJsonFile = ap.getAppNameToJsonFile();
+
+    if (appNameToJsonFile.isEmpty()) {
+      LOG.info("No JSON apps found");
+      return;    // nothing to do
+    }
+
+    // we have some JSON apps
+    File path = null;
+    try {
+      JSONArray appList = apInfo.getJSONArray("applications");
+      final int nApps = appList.length();
+      LOG.debug("Processing {} apps", nApps);
+      for (int i = 0; i < nApps; ++i) {
+        JSONObject app = appList.getJSONObject(i);
+        String type = app.getString("type");
+        if (! "json".equals(type)) {
+          continue;        // non-JSON apps are unchanged
+        }
+        String name = app.getString("name");
+        path = appNameToJsonFile.get(name);
+        if (null == path) {
+          throw new RuntimeException("Unexpected: path is null");    // should never happen
+        }
+        JSONObject fileContent = parseJsonFile(path);
+        app.remove("dag");
+        app.put("fileContent", fileContent);
+        LOG.debug("App {}: Replaced dag with fileContent of size {}", name, fileContent.length());
+      }
+    }
+    catch (JSONException e) {
+      final String msg = "JSONException for: {}"; 
+      LOG.warn(msg, path);
+      throw new CliException(msg, e);
+    }
+  }
+
   private class GetAppPackageInfoCommand implements Command
   {
     @Override
@@ -3424,6 +3507,7 @@ public class DTCli
         JSONSerializationProvider jomp = new JSONSerializationProvider();
         JSONObject apInfo = new JSONObject(jomp.getContext(null).writeValueAsString(ap));
         apInfo.remove("name");
+        fixJSONApps(ap, apInfo);
         printJson(apInfo);
       }
       finally {

@@ -291,7 +291,7 @@ public class OperatorDiscoverer
   {
     Map<String, JarFile> openJarFiles = new HashMap<String, JarFile>();
     Map<String, File> openClassFiles = new HashMap<String, File>();
-    try { 
+    try {
       for (String path : pathsToScan) {
         File f = null;
         try {
@@ -849,5 +849,66 @@ public class OperatorDiscoverer
     return typeGraph;
   }
 
+  public void findPortTypesWithSchemaClasses(JSONObject operator, JSONObject portTypesWithSchemaClasses) throws JSONException
+  {
+    if (typeGraph.size() == 0) {
+      buildTypeGraph();
+    }
+    JSONArray ports = operator.getJSONArray(OperatorDiscoverer.PORT_TYPE_INFO_KEY);
+    for (int i = 0; i < ports.length(); i++) {
+      JSONObject port = ports.getJSONObject(i);
+      String portType = port.optString("type");
+      if (portType == null) {
+        continue;
+      }
+      if (portType.equals("java.lang.Object")) {
+        //skipping as this will be true and UI will handle this in a special way.
+        continue;
+      }
+      if (portTypesWithSchemaClasses.has(portType)) {
+        //already present in the json so skipping
+        continue;
+      }
+      try {
+        JSONObject portTypeDesc = describeClassByASM(portType);
+        if (portTypeDesc.has("typeArgs")) {
+          //ignoring any type with generics
+          continue;
+        }
+        boolean hasSchemaClasses = false;
+        for (String descendent : typeGraph.getInitializableDescendants(portType)) {
+          try {
+            JSONObject descendentDesc = describeClassByASM(descendent);
+            if (descendentDesc.has("typeArgs")) {
+              //ignoring any type with generics since that cannot be a schema class
+              continue;
+            }
+            JSONArray descendentProps = descendentDesc.optJSONArray("properties");
+            if (descendentProps == null || descendentProps.length() == 0) {
+              //no properties then cannot be a schema class
+              continue;
+            }
+            for (int p = 0; p < descendentProps.length(); p++) {
+              JSONObject propDesc = descendentProps.getJSONObject(p);
+              if (propDesc.optBoolean("canGet", false)) {
+                hasSchemaClasses = true;
+                break;
+              }
+            }
+            if (hasSchemaClasses) {
+              break;
+            }
+          }
+          catch (Exception ex) {
+            LOG.warn("describing {}", descendent);
+          }
+        }
+        portTypesWithSchemaClasses.put(portType, hasSchemaClasses);
+      }
+      catch (Exception ex) {
+        LOG.warn("describing {}", portType);
+      }
+    }
+  }
 
 }

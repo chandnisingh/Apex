@@ -466,8 +466,8 @@ public class OperatorDiscoverer
           if (!inputPort.has("optional")) {
             inputPort.put("optional", false); // input port that is not annotated is default to be not optional
           }
-          if(!inputPort.has("schemaRequired")) {
-            inputPort.put("schemaRequired", false);
+          if(!inputPort.has(SCHEMA_REQUIRED_KEY)) {
+            inputPort.put(SCHEMA_REQUIRED_KEY, false);
           }
           inputPorts.put(inputPort);
         }
@@ -481,8 +481,8 @@ public class OperatorDiscoverer
           if (!outputPort.has("error")) {
             outputPort.put("error", false);
           }
-          if(!outputPort.has("schemaRequired")) {
-            outputPort.put("schemaRequired", false);
+          if(!outputPort.has(SCHEMA_REQUIRED_KEY)) {
+            outputPort.put(SCHEMA_REQUIRED_KEY, false);
           }
           outputPorts.put(outputPort);
         }

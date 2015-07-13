@@ -130,7 +130,7 @@ public class StramClient
       org.apache.http.client.utils.URLEncodedUtils.class,
       org.apache.http.message.BasicHeaderValueParser.class,
       com.esotericsoftware.minlog.Log.class,
-      org.objectweb.asm.tree.ClassNode.class,
+      org.apache.xbean.asm5.tree.ClassNode.class,
       org.mozilla.javascript.Scriptable.class
     };
 
@@ -478,8 +478,13 @@ public class StramClient
     FileSystem fs = StramClientUtils.newFileSystemInstance(conf);
     try {
       Path appsBasePath = new Path(StramClientUtils.getDTDFSRootDir(fs, conf), StramClientUtils.SUBDIR_APPS);
-      Path appPath = new Path(appsBasePath, appId.toString());
-
+      Path appPath;
+      String configuredAppPath = dag.getValue(LogicalPlan.APPLICATION_PATH);
+      if (configuredAppPath == null) {
+        appPath = new Path(appsBasePath, appId.toString());
+      } else {
+        appPath = new Path(configuredAppPath);
+      }
       String libJarsCsv = copyFromLocal(fs, appPath, localJarFiles.toArray(new String[]{}));
 
       LOG.info("libjars: {}", libJarsCsv);

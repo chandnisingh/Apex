@@ -3046,7 +3046,7 @@ public class DTCli
 
         json.put("operatorClasses", arr);
         json.put("portClassHier", portClassHier);
-        json.put("portTypesWIthSchemaClasses", portTypesWithSchemaClasses);
+        json.put("portTypesWithSchemaClasses", portTypesWithSchemaClasses);
         if (failed.length() > 0) {
           json.put("failedOperators", failed);
         }

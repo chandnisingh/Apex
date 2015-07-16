@@ -1044,4 +1044,31 @@ public class TypeGraph
     return result;
   }
 
+  /**
+   * A utility method that tells whether a class is considered a POJO
+   *
+   * @param className name of the class
+   * @return true if it is a POJO false otherwise.
+   */
+  public boolean isInitializableClassPOJO(String className) throws JSONException
+  {
+    JSONObject classDesc = describeClass(className);
+    if (classDesc.has("typeArgs")) {
+      //any type with generics is not considered a POJO
+      return false;
+    }
+    JSONArray classProps = classDesc.optJSONArray("properties");
+    if (classProps == null || classProps.length() == 0) {
+      //no properties then cannot be a POJO
+      return false;
+    }
+    for (int p = 0; p < classProps.length(); p++) {
+      JSONObject propDesc = classProps.getJSONObject(p);
+      if (propDesc.optBoolean("canGet", false)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 }

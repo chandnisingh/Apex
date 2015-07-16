@@ -879,23 +879,8 @@ public class OperatorDiscoverer
         for (String descendent : typeGraph.getInitializableDescendants(portType)) {
           try {
             JSONObject descendentDesc = describeClassByASM(descendent);
-            if (descendentDesc.has("typeArgs")) {
-              //ignoring any type with generics since that cannot be a schema class
-              continue;
-            }
-            JSONArray descendentProps = descendentDesc.optJSONArray("properties");
-            if (descendentProps == null || descendentProps.length() == 0) {
-              //no properties then cannot be a schema class
-              continue;
-            }
-            for (int p = 0; p < descendentProps.length(); p++) {
-              JSONObject propDesc = descendentProps.getJSONObject(p);
-              if (propDesc.optBoolean("canGet", false)) {
-                hasSchemaClasses = true;
-                break;
-              }
-            }
-            if (hasSchemaClasses) {
+            if (typeGraph.isInitializableClassPOJO(descendent)) {
+              hasSchemaClasses = true;
               break;
             }
           }

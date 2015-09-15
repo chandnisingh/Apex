@@ -150,7 +150,13 @@ public class OperatorDiscoverer
             boolean lSetterCheck = !lGetterCheck && isSetter(methodName);
 
             if (lGetterCheck || lSetterCheck) {
-              addTagToMethod(lGetterCheck ? oci.getMethods : oci.setMethods, tagText, MethodTagType.valueOf(tagName));
+              if (MethodTagType.OMIT_FROM_UI.tag.equals(tagName)) {
+                addTagToMethod(lGetterCheck ? oci.getMethods : oci.setMethods, tagText, MethodTagType.OMIT_FROM_UI);
+              } else if (MethodTagType.USE_SCHEMA.tag.equals(tagName)) {
+                addTagToMethod(lGetterCheck ? oci.getMethods : oci.setMethods, tagText, MethodTagType.USE_SCHEMA);
+              } else if (MethodTagType.DESCRIPTION.tag.equals(tagName)) {
+                addTagToMethod(lGetterCheck ? oci.getMethods : oci.setMethods, tagText, MethodTagType.DESCRIPTION);
+              }
             }
 //            if ("@return".equals(tagName) && isGetter(methodName)) {
 //              oci.getMethods.put(methodName, tagText);

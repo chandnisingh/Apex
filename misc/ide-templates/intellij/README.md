@@ -1,0 +1,25 @@
+Importing APEX Code Style in IntelliJ
+=====================================
+
+With IntelliJ you can either import settings globally for all the workspaces or apply the style to a specific project.
+
+##Import settings globally
+To share settings between all the workspaces you can import the `apex-style.jar` which contains the apex-style.
+
+####To import the settings from the jar archive
+1. On the main menu, choose File | Import Settings.
+2. In the Import File Location dialog box that opens select the `apex-style.jar`.
+3. The Select Components to Import dialog box that opens next will only have an entry for code style which by default is selected. Click on OK. 
+4. Restart IntelliJ once the jar is successfully imported.
+
+####To apply APEX code style
+1. On the main menu, choose IntelliJ | Preferences.
+2. Go to Editor | Code Style.
+3. In the 'Scheme' drop down select 'apex-style'.
+
+##Apply settings to a specific project
+1. There is a .idea folder under the project workspace which contains a codeStyleSettings.xml. Make a backup of this file as this will be replaced.
+2. Copy the `codeStyleSettings.xml` in this folder to the .idea folder.
+3. On the main menu of IntelliJ, choose IntelliJ | Preferences.
+4. Go to Editor | Code Style.
+5. In the 'Scheme' drop down select 'Project'.

@@ -23,6 +23,12 @@ You acknowledge that your submissions to this repository are made pursuant the t
   * Create a GitHub pull request from your repository, providing as many details about your changes as possible
   * After review and acceptance one of the committers will merge the pull request.
 
+Apex code needs to follow a certain coding style so that it is consistent with the existing code that is already in the repository. We provide code style configurations for some of the most popular IDEs to make it easy for the contributors of Apex.
+
+  * To configure **Eclipse** follow instructions in [Eclipse README](misc/ide-templates/eclipse/README.md)
+  * To configure **IntelliJ** follow instructions in [IntelliJ README](misc/ide-templates/intellij/README.md)
+  * To configure **NetBeans** follow instructions in [NetBeans README](misc/ide-templates/netbeans/README.md)
+
 When adding **new files**, please include the Apache v2.0 license header. From the top level directory:
 
 Run `mvn license:check -Dlicense.skip=false` to check correct header formatting.

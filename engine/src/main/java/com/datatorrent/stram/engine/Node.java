@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.engine;
 
@@ -28,48 +25,27 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Queue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import org.apache.hadoop.util.ReflectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.hadoop.util.ReflectionUtils;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.math.IntMath;
 
-import com.datatorrent.api.AutoMetric;
-import com.datatorrent.api.Component;
-import com.datatorrent.api.InputOperator;
-import com.datatorrent.api.Operator;
+import com.datatorrent.api.*;
 import com.datatorrent.api.Operator.InputPort;
 import com.datatorrent.api.Operator.OutputPort;
 import com.datatorrent.api.Operator.ProcessingMode;
 import com.datatorrent.api.Operator.Unifier;
-import com.datatorrent.api.Sink;
-import com.datatorrent.api.Stats;
-import com.datatorrent.api.StatsListener;
 import com.datatorrent.api.StatsListener.OperatorRequest;
-import com.datatorrent.api.StorageAgent;
+
 import com.datatorrent.bufferserver.util.Codec;
-import com.datatorrent.common.util.AsyncFSStorageAgent;
-import com.datatorrent.common.util.Pair;
-import com.datatorrent.netlet.util.DTThrowable;
 import com.datatorrent.stram.api.Checkpoint;
 import com.datatorrent.stram.api.OperatorDeployInfo;
 import com.datatorrent.stram.api.StreamingContainerUmbilicalProtocol.ContainerStats;
@@ -123,18 +99,12 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
   public final BlockingQueue<StatsListener.OperatorResponse> commandResponse;
   private final List<Field> metricFields;
   private final Map<String, Method> metricMethods;
-  private ExecutorService executorService;
-  private Queue<Pair<FutureTask<Stats.CheckpointStats>, CheckpointWindowInfo>> taskQueue;
   protected Stats.CheckpointStats checkpointStats;
-  public long firstWindowMillis;
-  public long windowWidthMillis;
 
   public Node(OPERATOR operator, OperatorContext context)
   {
     this.operator = operator;
     this.context = context;
-    executorService = Executors.newSingleThreadExecutor();
-    taskQueue = new LinkedList<Pair<FutureTask<Stats.CheckpointStats>, CheckpointWindowInfo>>();
 
     outputs = new HashMap<String, Sink<Object>>();
 
@@ -203,9 +173,6 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
       pcpair.component.teardown();
     }
 
-    if (executorService != null) {
-      executorService.shutdownNow();
-    }
     operator.teardown();
   }
 
@@ -318,10 +285,6 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
       logger.warn("Shutdown requested when context is not available!");
     }
     else {
-      /*
-       * Since alive is non-volatile this code explicitly unsets it in the operator lifecycle theread thereby notifying
-       * it even when the thread is reading it from the cache
-       */
       context.request(new OperatorRequest()
       {
         @Override
@@ -356,9 +319,7 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
 
   protected void emitEndWindow()
   {
-    long windowId = (operator instanceof Operator.DelayOperator) ?
-        WindowGenerator.getAheadWindowId(currentWindowId, firstWindowMillis, windowWidthMillis, 1) : currentWindowId;
-    EndWindowTuple ewt = new EndWindowTuple(windowId);
+    EndWindowTuple ewt = new EndWindowTuple(currentWindowId);
     for (int s = sinks.length; s-- > 0; ) {
       sinks[s].put(ewt);
     }
@@ -444,23 +405,6 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
       checkpointStats = null;
       checkpoint = null;
     }
-    else {
-      Pair<FutureTask<Stats.CheckpointStats>, CheckpointWindowInfo> pair = taskQueue.peek();
-      if (pair != null && pair.getFirst().isDone()) {
-        taskQueue.poll();
-        try {
-          CheckpointWindowInfo checkpointWindowInfo = pair.getSecond();
-          stats.checkpointStats = pair.getFirst().get();
-          stats.checkpoint = new Checkpoint(checkpointWindowInfo.windowId, checkpointWindowInfo.applicationWindowCount,
-              checkpointWindowInfo.checkpointWindowCount);
-          if (operator instanceof Operator.CheckpointListener) {
-            ((Operator.CheckpointListener) operator).checkpointed(checkpointWindowInfo.windowId);
-          }
-        } catch (Exception ex) {
-          throw DTThrowable.wrapIfChecked(ex);
-        }
-      }
-    }
 
     context.report(stats, windowId);
   }
@@ -490,40 +434,12 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
   void checkpoint(long windowId)
   {
     if (!context.stateless) {
-      if (operator instanceof Operator.CheckpointNotificationListener) {
-        ((Operator.CheckpointNotificationListener)operator).beforeCheckpoint(windowId);
-      }
-
       StorageAgent ba = context.getValue(OperatorContext.STORAGE_AGENT);
       if (ba != null) {
         try {
           checkpointStats = new Stats.CheckpointStats();
           checkpointStats.checkpointStartTime = System.currentTimeMillis();
           ba.save(operator, id, windowId);
-          if (ba instanceof AsyncFSStorageAgent) {
-            AsyncFSStorageAgent asyncFSStorageAgent = (AsyncFSStorageAgent) ba;
-            if (!asyncFSStorageAgent.isSyncCheckpoint()) {
-              if(PROCESSING_MODE != ProcessingMode.EXACTLY_ONCE) {
-                CheckpointWindowInfo checkpointWindowInfo = new CheckpointWindowInfo();
-                checkpointWindowInfo.windowId = windowId;
-                checkpointWindowInfo.applicationWindowCount = applicationWindowCount;
-                checkpointWindowInfo.checkpointWindowCount = checkpointWindowCount;
-                CheckpointHandler checkpointHandler = new CheckpointHandler();
-                checkpointHandler.agent = asyncFSStorageAgent;
-                checkpointHandler.operatorId = id;
-                checkpointHandler.windowId = windowId;
-                checkpointHandler.stats = checkpointStats;
-                FutureTask<Stats.CheckpointStats> futureTask = new FutureTask<>(checkpointHandler);
-                taskQueue.add(new Pair<FutureTask<Stats.CheckpointStats>, CheckpointWindowInfo>(futureTask, checkpointWindowInfo));
-                executorService.submit(futureTask);
-                checkpoint = null;
-                checkpointStats = null;
-                return;
-              }else{
-                asyncFSStorageAgent.copyToHDFS(id, windowId);
-              }
-            }
-          }
           checkpointStats.checkpointTime = System.currentTimeMillis() - checkpointStats.checkpointStartTime;
         }
         catch (IOException ie) {
@@ -652,30 +568,6 @@ public abstract class Node<OPERATOR extends Operator> implements Component<Opera
     }
 
     deactivateSinks();
-  }
-
-  private class CheckpointHandler implements Callable<Stats.CheckpointStats>
-  {
-
-    public AsyncFSStorageAgent agent;
-    public int operatorId;
-    public long windowId;
-    public Stats.CheckpointStats stats;
-
-    @Override
-    public Stats.CheckpointStats call() throws Exception
-    {
-      agent.copyToHDFS(id, windowId);
-      stats.checkpointTime = System.currentTimeMillis() - stats.checkpointStartTime;
-      return stats;
-    }
-  }
-
-  private class CheckpointWindowInfo
-  {
-    public int applicationWindowCount;
-    public int checkpointWindowCount;
-    public long windowId;
   }
 
   private static final Logger logger = LoggerFactory.getLogger(Node.class);

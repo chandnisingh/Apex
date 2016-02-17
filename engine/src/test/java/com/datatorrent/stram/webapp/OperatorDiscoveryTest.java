@@ -1,26 +1,20 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.webapp;
 
-import java.beans.BeanInfo;
-import java.beans.Introspector;
-import java.beans.PropertyDescriptor;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -47,12 +41,9 @@ import com.datatorrent.api.DefaultOutputPort;
 import com.datatorrent.api.annotation.InputPortFieldAnnotation;
 import com.datatorrent.api.annotation.OutputPortFieldAnnotation;
 import com.datatorrent.common.util.BaseOperator;
-import com.datatorrent.api.InputOperator;
-
 import com.datatorrent.stram.plan.logical.LogicalPlan;
 import com.datatorrent.stram.plan.logical.LogicalPlan.OperatorMeta;
 import com.datatorrent.stram.plan.logical.LogicalPlanConfiguration;
-import com.datatorrent.stram.support.StramTestSupport;
 import com.datatorrent.stram.util.ObjectMapperFactory;
 import com.datatorrent.stram.webapp.TypeDiscoverer.UI_TYPE;
 
@@ -64,7 +55,7 @@ import com.google.common.collect.Lists;
 public class OperatorDiscoveryTest
 {
 //  private static final Logger LOG = LoggerFactory.getLogger(OperatorDiscoveryTest.class);
-
+  
   public static class GenericClassBase<T> extends BaseOperator
   {
     private int A;
@@ -179,7 +170,7 @@ public class OperatorDiscoveryTest
     OperatorDiscoverer operatorDiscoverer = new OperatorDiscoverer(classFilePath);
     operatorDiscoverer.buildTypeGraph();
 
-    // make sure (de)serialization of type graph works without problem
+    // make sure (de)serialization of type graph works withtout problem
     Kryo kryo = new Kryo();
     TypeGraph.TypeGraphSerializer tgs = new TypeGraph.TypeGraphSerializer();
     kryo.register(TypeGraph.class, tgs);
@@ -197,8 +188,7 @@ public class OperatorDiscoveryTest
     String[] classFilePath = getClassFileInClasspath();
     OperatorDiscoverer operatorDiscoverer = new OperatorDiscoverer(classFilePath);
     operatorDiscoverer.buildTypeGraph();
-    JSONObject oper = operatorDiscoverer.describeOperator(SubSubClassGeneric.class.getName());
-
+    JSONObject oper = operatorDiscoverer.describeOperator(SubSubClassGeneric.class);
     String debug = "\n(ASM)type info for " + TestOperator.class + ":\n" + oper.toString(2) + "\n";
 
     JSONArray props = oper.getJSONArray("properties");
@@ -207,7 +197,7 @@ public class OperatorDiscoveryTest
     JSONArray outputPorts = oper.getJSONArray("outputPorts");
 
     Assert.assertNotNull(debug + "Properties aren't null ", props);
-    Assert.assertEquals(debug + "Number of properties ", 4, props.length());
+    Assert.assertEquals(debug + "Number of properties ", 5, props.length());
 
     Assert.assertNotNull(debug + "Port types aren't null ", portTypes);
     Assert.assertEquals(debug + "Number of port types ", 5, portTypes.length());
@@ -279,28 +269,21 @@ public class OperatorDiscoveryTest
   @Test
   public void testPropertyDiscovery() throws Exception
   {
-
+    
     String[] classFilePath = getClassFileInClasspath();
     OperatorDiscoverer od = new OperatorDiscoverer(classFilePath);
     od.buildTypeGraph();
 
     Assert.assertNotNull(od.getOperatorClass(BaseOperator.class.getName()));
+    Assert.assertFalse("Base Operator is not instantiable because it is not an InputOperator and it has no input port ",
+            OperatorDiscoverer.isInstantiableOperatorClass(BaseOperator.class));
 
     JSONObject asmDesc = od.describeClassByASM(TestOperator.class.getName());
     String debug = "\n(ASM)type info for " + TestOperator.class + ":\n" + asmDesc.toString(2) + "\n";
 
     JSONArray props = asmDesc.getJSONArray("properties");
     Assert.assertNotNull(debug + "Properties aren't null ", props);
-    Assert.assertEquals(debug + "Number of properties ", 27, props.length());
-
-    // make sure properties of excluded classes are not in the asm description of the type
-    for(String classN : TypeGraph.EXCLUDE_CLASSES){
-      Class c = Class.forName(classN.replace('/', '.'));
-      BeanInfo bi = Introspector.getBeanInfo(c);
-      for (PropertyDescriptor pd : bi.getPropertyDescriptors()){
-        Assert.assertNull(debug, getJSONProperty(props, pd.getName()));
-      }
-    }
+    Assert.assertEquals(debug + "Number of properties ", 28, props.length());
 
     JSONObject mapProperty = getJSONProperty(props, "map");
     Assert.assertEquals(debug + "canGet " + mapProperty, true, mapProperty.get("canGet"));
@@ -358,8 +341,8 @@ public class OperatorDiscoveryTest
     props = desc.getJSONArray("properties");
     genericArray = getJSONProperty(props, "genericArray");
     Assert.assertEquals(debug + "type " + genericArray, String[].class.getName(), genericArray.get("type"));
-
-
+    
+    
     // Test complicated Type Variable override in Hierarchy
     desc = od.describeClassByASM(SubSubClass.class.getName());
     props = desc.getJSONArray("properties");
@@ -498,26 +481,6 @@ public class OperatorDiscoveryTest
 
   }
 
-  @Test
-  public void testExternalResource() throws Exception
-  {
-
-
-    StramTestSupport.createAppPackageFile();
-    
-    String[] classFilePath = getClassFileInClasspath();
-
-    String[]cPaths = Lists.asList("src/test/resources/testAppPackage/mydtapp/target/mydtapp-1.0-SNAPSHOT.jar", classFilePath).toArray(new String[]{});
-    OperatorDiscoverer od = new OperatorDiscoverer(cPaths);
-    od.buildTypeGraph();
-
-    Assert.assertEquals("true", od.describeClass("com.example.mydtapp.StdoutOperator").getString("hasResource"));
-
-    StramTestSupport.removeAppPackageFile();
-
-  }
-
-
   public static class Structured
   {
     private int size;
@@ -589,9 +552,9 @@ public class OperatorDiscoveryTest
         return false;
       return true;
     }
-
-
-
+    
+    
+    
 
   }
 
@@ -608,7 +571,7 @@ public class OperatorDiscoveryTest
     private long longProp;
     private double doubleProp;
     private boolean booleanProp;
-
+    
     private Integer integerProp;
     private List<String> stringList;
     private List<Structured> nestedList;
@@ -647,39 +610,39 @@ public class OperatorDiscoveryTest
     {
       return mProp;
     }
-
+    
     public String getAlias()
     {
       return realName;
     }
-
+    
     public void setAlias(String alias)
     {
       realName = alias;
     }
-
+    
     public String getGetterOnly()
     {
       return getterOnly;
     }
-
-
+    
+    
     public URI getUri()
     {
       return uri;
     }
-
+    
     public void setUri(URI uri)
     {
       this.uri = uri;
     }
-
-
+    
+    
     public void setIntegerProp(Integer integerProp)
     {
       this.integerProp = integerProp;
     }
-
+    
     public Integer getIntegerProp()
     {
       return integerProp;
@@ -769,7 +732,7 @@ public class OperatorDiscoveryTest
     {
       return stringArray;
     }
-
+    
     public void setStringArray(String[] stringArray)
     {
       this.stringArray = stringArray;
@@ -893,15 +856,15 @@ public class OperatorDiscoveryTest
   static class ExtendedOperator extends TestOperator<String, Map<String, Number>>
   {
   }
-
+  
   public static class BaseClass<A, B, C>
   {
     private A a;
-
+    
     private B b;
 
     private C c;
-
+    
     public void setA(A a)
     {
       this.a = a;
@@ -910,12 +873,12 @@ public class OperatorDiscoveryTest
     {
       this.b = b;
     }
-
+    
     public A getA()
     {
       return a;
     }
-
+    
     public B getB()
     {
       return b;
@@ -925,7 +888,7 @@ public class OperatorDiscoveryTest
     {
       this.c = c;
     }
-
+    
     public C getC()
     {
       return c;
@@ -935,28 +898,28 @@ public class OperatorDiscoveryTest
   public static class SubClass<D, A extends Number> extends BaseClass<Number, A, D>
   {
     private D d;
-
+    
     public void setD(D d)
     {
       this.d = d;
     }
-
+    
     public D getD()
     {
       return d;
     }
-
+    
   }
 
   public static class SubSubClass<E extends Runnable> extends SubClass<List<String>, Long>
   {
     private E e;
-
+    
     public void setE(E e)
     {
       this.e = e;
     }
-
+    
     public E getE()
     {
       return e;
@@ -1010,7 +973,7 @@ public class OperatorDiscoveryTest
     Assert.assertArrayEquals(ah.intArray, clone.intArray);
 
   }
-
+  
   @Test
   public void testLogicalPlanConfiguration() throws Exception
   {
@@ -1030,13 +993,13 @@ public class OperatorDiscoveryTest
     ObjectMapper mapper = ObjectMapperFactory.getOperatorValueSerializer();
     String s = mapper.writeValueAsString(bean);
 //    LOG.debug(new JSONObject(s).toString(2));
-    //
+    // 
     Assert.assertTrue("Shouldn't contain field 'realName' !", !s.contains("realName"));
     Assert.assertTrue("Should contain property 'alias' !", s.contains("alias"));
     Assert.assertTrue("Shouldn't contain property 'getterOnly' !", !s.contains("getterOnly"));
     JSONObject jsonObj = new JSONObject(s);
-
-    // create the json dag representation
+    
+    // create the json dag representation 
     JSONObject jsonPlan = new JSONObject();
     jsonPlan.put("streams", new JSONArray());
     JSONObject jsonOper = new JSONObject();
@@ -1044,17 +1007,17 @@ public class OperatorDiscoveryTest
     jsonOper.put("class", TestOperator.class.getName());
     jsonOper.put("properties", jsonObj);
     jsonPlan.put("operators", new JSONArray(Lists.newArrayList(jsonOper)));
-
-
+    
+    
     Configuration conf = new Configuration(false);
     LogicalPlanConfiguration lpc = new LogicalPlanConfiguration(conf);
-    // create logical plan from the json
+    // create logical plan from the json 
     LogicalPlan lp = lpc.createFromJson(jsonPlan, "jsontest");
     OperatorMeta om = lp.getOperatorMeta("Test Operator");
     Assert.assertTrue(om.getOperator() instanceof TestOperator);
     @SuppressWarnings("rawtypes")
     TestOperator beanBack = (TestOperator) om.getOperator();
-
+    
     // The operator deserialized back from json should be same as original operator
     Assert.assertEquals(bean.map, beanBack.map);
     Assert.assertArrayEquals(bean.stringArray, beanBack.stringArray);
@@ -1066,78 +1029,8 @@ public class OperatorDiscoveryTest
     Assert.assertEquals(bean.booleanProp, beanBack.booleanProp);
     Assert.assertEquals(bean.realName, beanBack.realName);
     Assert.assertEquals(bean.getterOnly, beanBack.getterOnly);
-
-
-  }
-
-  public static class SchemaRequiredOperator extends BaseOperator implements InputOperator
-  {
-    @OutputPortFieldAnnotation(schemaRequired = true)
-    public final transient DefaultOutputPort<Object> output = new DefaultOutputPort<Object>();
-
-    @OutputPortFieldAnnotation(schemaRequired = false)
-    public final transient DefaultOutputPort<Object> output1 = new DefaultOutputPort<Object>();
-
-    public final transient DefaultOutputPort<Object> output2 = new DefaultOutputPort<Object>();
-
-    @Override
-    public void emitTuples()
-    {
-    }
-  }
-
-  @Test
-  public void testPortSchema() throws Exception
-  {
-    String[] classFilePath = getClassFileInClasspath();
-    OperatorDiscoverer od = new OperatorDiscoverer(classFilePath);
-    od.buildTypeGraph();
-    JSONObject operatorJson = od.describeOperator(SchemaRequiredOperator.class.getName());
-    JSONArray portsJson = operatorJson.getJSONArray("outputPorts");
-
-    Assert.assertEquals("no. of ports", 3, portsJson.length());
-
-    for (int i = 0; i < portsJson.length(); i++) {
-      JSONObject portJson = portsJson.getJSONObject(i);
-      String name = portJson.getString("name");
-      if (name.equals("output")) {
-        Assert.assertEquals("output schema", true, portJson.getBoolean("schemaRequired"));
-      } else if (name.equals("output1")) {
-        Assert.assertEquals("output1 schema", false, portJson.getBoolean("schemaRequired"));
-      } else if (name.equals("output2")) {
-        Assert.assertEquals("output2 schema", false, portJson.getBoolean("schemaRequired"));
-      }
-    }
-  }
-
-  @Test
-  public void testAdditionalPortInfo() throws Exception
-  {
-    String[] classFilePath = getClassFileInClasspath();
-    OperatorDiscoverer operatorDiscoverer = new OperatorDiscoverer(classFilePath);
-    operatorDiscoverer.buildTypeGraph();
-    JSONObject operator = operatorDiscoverer.describeOperator(SubSubClassGeneric.class.getName());
-
-    JSONObject portClassHierarchy = new JSONObject();
-    JSONObject portsWithSchemaClasses = new JSONObject();
-    operatorDiscoverer.buildAdditionalPortInfo(operator, portClassHierarchy, portsWithSchemaClasses);
-
-    JSONArray stringTypeArray = portClassHierarchy.optJSONArray("java.lang.String");
-    Assert.assertNotNull("string hierarchy", stringTypeArray);
-
-    Assert.assertEquals("number of immediate ancestors", 4, stringTypeArray.length());
-
-    Assert.assertEquals("number of port types with schema", 0, portsWithSchemaClasses.length());
-  }
-
-  @Test
-  public void testMethodType()
-  {
-    Assert.assertEquals("@omitFromUI", OperatorDiscoverer.MethodTagType.OMIT_FROM_UI, OperatorDiscoverer.MethodTagType.from("@omitFromUI"));
-    Assert.assertEquals("@useSchema", OperatorDiscoverer.MethodTagType.USE_SCHEMA, OperatorDiscoverer.MethodTagType.from("@useSchema"));
-    Assert.assertEquals("@description", OperatorDiscoverer.MethodTagType.DESCRIPTION, OperatorDiscoverer.MethodTagType.from("@description"));
-    Assert.assertEquals("@random", null, OperatorDiscoverer.MethodTagType.from("@random"));
+    
+    
   }
 
 }
-

@@ -1,23 +1,21 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram;
 
+import com.datatorrent.stram.api.Checkpoint;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
@@ -25,15 +23,22 @@ import java.io.LineNumberReader;
 import java.util.Arrays;
 import java.util.Map;
 
-import org.junit.*;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.datatorrent.common.util.AsyncFSStorageAgent;
 import com.datatorrent.stram.StramLocalCluster.LocalStreamingContainer;
 import com.datatorrent.stram.StramLocalCluster.MockComponentFactory;
-import com.datatorrent.stram.api.Checkpoint;
-import com.datatorrent.stram.engine.*;
+import com.datatorrent.stram.engine.GenericTestOperator;
+import com.datatorrent.stram.engine.Node;
+import com.datatorrent.stram.engine.OperatorContext;
+import com.datatorrent.stram.engine.TestGeneratorInputOperator;
+import com.datatorrent.stram.engine.TestOutputOperator;
+import com.datatorrent.stram.engine.WindowGenerator;
 import com.datatorrent.stram.plan.logical.LogicalPlan;
 import com.datatorrent.stram.plan.physical.PTOperator;
 import com.datatorrent.stram.support.ManualScheduledExecutorService;
@@ -46,12 +51,11 @@ public class StramLocalClusterTest
   @Rule
   public StramTestSupport.TestMeta testMeta = new StramTestSupport.TestMeta();
 
-  private LogicalPlan dag;
-
   @Before
   public void setup() throws IOException
   {
-    dag = StramTestSupport.createDAG(testMeta);
+//    StramChild.eventloop = new DefaultEventLoop("StramLocalClusterTestEventLoop");
+//    StramChild.eventloop.start();
   }
 
   @After
@@ -69,6 +73,9 @@ public class StramLocalClusterTest
   @Test
   public void testLocalClusterInitShutdown() throws Exception
   {
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(LogicalPlan.APPLICATION_PATH, testMeta.dir);
+
     TestGeneratorInputOperator genNode = dag.addOperator("genNode", TestGeneratorInputOperator.class);
     genNode.setMaxTuples(2);
 
@@ -105,9 +112,8 @@ public class StramLocalClusterTest
   @SuppressWarnings("SleepWhileInLoop")
   public void testRecovery() throws Exception
   {
-    AsyncFSStorageAgent agent = new AsyncFSStorageAgent(testMeta.getPath(), null);
-    agent.setSyncCheckpoint(true);
-    dag.setAttribute(OperatorContext.STORAGE_AGENT, agent);
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(LogicalPlan.APPLICATION_PATH, testMeta.dir);
 
     TestGeneratorInputOperator node1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
     // data will be added externally from test

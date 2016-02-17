@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.plan.physical;
 
@@ -183,6 +180,7 @@ public class PhysicalPlanTest
         p.getPartitionKeys().put(this.inport1, lpks);
         p.getPartitionKeys().put(this.inportWithCodec, lpks);
         p.getPartitionedInstance().pks = p.getPartitionKeys().values().toString();
+        p.getPartitionedInstance().setName(p.getPartitionKeys().values().toString());
         newPartitions.add(p);
       }
 
@@ -254,7 +252,7 @@ public class PhysicalPlanTest
     dag.addStream("node1.outport1", node1.outport1, node2.inport2, node2.inport1);
 
     int initialPartitionCount = 5;
-    OperatorMeta node2Decl = dag.getMeta(node2);
+    OperatorMeta node2Decl = dag.getOperatorMeta(node2.getName());
     node2Decl.getAttributes().put(OperatorContext.PARTITIONER, new StatelessPartitioner<GenericTestOperator>(initialPartitionCount));
 
     PhysicalPlan plan = new PhysicalPlan(dag, new TestPlanContext());
@@ -352,7 +350,7 @@ public class PhysicalPlanTest
 
     dag.getAttributes().put(LogicalPlan.CONTAINERS_MAX_COUNT, 2);
 
-    OperatorMeta o2Meta = dag.getMeta(o2);
+    OperatorMeta o2Meta = dag.getOperatorMeta(o2.getName());
     o2Meta.getAttributes().put(OperatorContext.STATS_LISTENERS,
                                Lists.newArrayList((StatsListener) new PartitionLoadWatch(0, 5)));
     o2Meta.getAttributes().put(OperatorContext.PARTITIONER, new StatelessPartitioner<GenericTestOperator>(1));
@@ -443,7 +441,7 @@ public class PhysicalPlanTest
   public void testInputOperatorPartitioning() {
     LogicalPlan dag = new LogicalPlan();
     TestInputOperator<Object> o1 = dag.addOperator("o1", new TestInputOperator<Object>());
-    OperatorMeta o1Meta = dag.getMeta(o1);
+    OperatorMeta o1Meta = dag.getOperatorMeta(o1.getName());
     dag.setAttribute(o1, OperatorContext.STATS_LISTENERS, Arrays.asList(new StatsListener[]{new PartitioningTest.PartitionLoadWatch()}));
     dag.setAttribute(o1, OperatorContext.PARTITIONER, new StatelessPartitioner<TestInputOperator<Object>>(2));
 
@@ -511,7 +509,7 @@ public class PhysicalPlanTest
 
     dag.getAttributes().put(LogicalPlan.CONTAINERS_MAX_COUNT, 2);
 
-    OperatorMeta node2Meta = dag.getMeta(o2);
+    OperatorMeta node2Meta = dag.getOperatorMeta(o2.getName());
     node2Meta.getAttributes().put(OperatorContext.STATS_LISTENERS,
                                   Lists.newArrayList((StatsListener) new PartitionLoadWatch(3, 5)));
     node2Meta.getAttributes().put(OperatorContext.PARTITIONER, new StatelessPartitioner<GenericTestOperator>(8));

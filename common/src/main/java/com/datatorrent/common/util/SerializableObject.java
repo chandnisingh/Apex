@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.common.util;
 
@@ -22,8 +19,8 @@ import java.io.ObjectStreamException;
 import java.io.Serializable;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +31,6 @@ import org.slf4j.LoggerFactory;
  * this class provides boilerplate code to play with the very uncommon serialization API and provides a
  * way to easily and correctly serialize and deserialize such objects. The only condition is that the
  * class of such object should provide either a copy constructor or a default constructor. *
- *
- * @since 3.0.0
  */
 public class SerializableObject implements Serializable
 {
@@ -58,21 +53,37 @@ public class SerializableObject implements Serializable
       Constructor<? extends SerializableObject> constructor = this.getClass().getConstructor(this.getClass());
       try {
         constructor.setAccessible(true);
-      } catch (SecurityException ex) {
+      }
+      catch (SecurityException ex) {
         logger.warn("Accessing copy constructor {} failed.", constructor, ex);
       }
       try {
         return constructor.newInstance(this);
-      } catch (ReflectiveOperationException | IllegalArgumentException ex) {
+      }
+      catch (InstantiationException ex) {
         throw new RuntimeException("Instantiation using copy constructor failed!", ex);
       }
-    } catch (NoSuchMethodException snme) {
+      catch (IllegalAccessException ex) {
+        throw new RuntimeException("Instantiation using copy constructor failed!", ex);
+      }
+      catch (IllegalArgumentException ex) {
+        throw new RuntimeException("Instantiation using copy constructor failed!", ex);
+      }
+      catch (InvocationTargetException ex) {
+        throw new RuntimeException("Instantiation using copy constructor failed!", ex);
+      }
+    }
+    catch (NoSuchMethodException snme) {
       logger.debug("No copy constructor detected for class {}, trying default constructor.", this.getClass().getSimpleName());
       try {
         SerializableObject newInstance = this.getClass().newInstance();
         transferStateTo(newInstance);
         return newInstance;
-      } catch (ReflectiveOperationException ex) {
+      }
+      catch (IllegalAccessException ex) {
+        throw new RuntimeException("Deserialization using default constructor failed!", ex);
+      }
+      catch (InstantiationException ex) {
         throw new RuntimeException("Deserialization using default constructor failed!", ex);
       }
     }
@@ -92,20 +103,27 @@ public class SerializableObject implements Serializable
         if (!(Modifier.isFinal(modifiers) && Modifier.isTransient(modifiers) || Modifier.isStatic(modifiers))) {
           try {
             field.setAccessible(true);
-          } catch (SecurityException ex) {
+          }
+          catch (SecurityException ex) {
             logger.warn("Cannot set field {} accessible.", field, ex);
           }
           try {
             field.set(dest, field.get(this));
-          } catch (IllegalArgumentException ex) {
+          }
+          catch (IllegalArgumentException ex) {
             throw new RuntimeException("Getter/Setter argument failed using reflection on " + field, ex);
-          } catch (IllegalAccessException ex) {
+          }
+          catch (IllegalAccessException ex) {
             throw new RuntimeException("Getter/Setter access failed using reflection on " + field, ex);
           }
           if (!field.getType().isPrimitive()) {
             try {
               field.set(this, null);
-            } catch (IllegalArgumentException | IllegalAccessException ex) {
+            }
+            catch (IllegalArgumentException ex) {
+              logger.warn("Failed to set field {} to null; generally it's harmless, but with reference counted data structure this may be an issue.", field, ex);
+            }
+            catch (IllegalAccessException ex) {
               logger.warn("Failed to set field {} to null; generally it's harmless, but with reference counted data structure this may be an issue.", field, ex);
             }
           }

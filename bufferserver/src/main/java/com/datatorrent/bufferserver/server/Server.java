@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.bufferserver.server;
 
@@ -29,13 +26,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map.Entry;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,12 +34,7 @@ import org.slf4j.LoggerFactory;
 import com.datatorrent.bufferserver.internal.DataList;
 import com.datatorrent.bufferserver.internal.FastDataList;
 import com.datatorrent.bufferserver.internal.LogicalNode;
-import com.datatorrent.bufferserver.packet.PayloadTuple;
-import com.datatorrent.bufferserver.packet.PublishRequestTuple;
-import com.datatorrent.bufferserver.packet.PurgeRequestTuple;
-import com.datatorrent.bufferserver.packet.ResetRequestTuple;
-import com.datatorrent.bufferserver.packet.SubscribeRequestTuple;
-import com.datatorrent.bufferserver.packet.Tuple;
+import com.datatorrent.bufferserver.packet.*;
 import com.datatorrent.bufferserver.storage.Storage;
 import com.datatorrent.common.util.NameableThreadFactory;
 import com.datatorrent.netlet.AbstractLengthPrependerClient;
@@ -91,10 +77,7 @@ public class Server implements ServerListener
     this.blockSize = blocksize;
     this.numberOfCacheBlocks = numberOfCacheBlocks;
     serverHelperExecutor = Executors.newSingleThreadExecutor(new NameableThreadFactory("ServerHelper"));
-    final ArrayBlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(numberOfCacheBlocks);
-    final NameableThreadFactory threadFactory = new NameableThreadFactory("StorageHelper");
-    storageHelperExecutor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, workQueue, threadFactory,
-        new ThreadPoolExecutor.CallerRunsPolicy());
+    storageHelperExecutor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<Runnable>(numberOfCacheBlocks), new NameableThreadFactory("StorageHelper"), new ThreadPoolExecutor.CallerRunsPolicy());
   }
 
   public void setSpoolStorage(Storage storage)
@@ -118,7 +101,8 @@ public class Server implements ServerListener
     storageHelperExecutor.shutdown();
     try {
       serverHelperExecutor.awaitTermination(5000, TimeUnit.MILLISECONDS);
-    } catch (InterruptedException ex) {
+    }
+    catch (InterruptedException ex) {
       logger.debug("Executor Termination", ex);
     }
     logger.info("Server stopped listening at {}", address);
@@ -130,7 +114,8 @@ public class Server implements ServerListener
     while (address == null) {
       try {
         wait(20);
-      } catch (InterruptedException ex) {
+      }
+      catch (InterruptedException ex) {
         throw new RuntimeException(ex);
       }
     }
@@ -141,7 +126,7 @@ public class Server implements ServerListener
 
   public void setAuthToken(byte[] authToken)
   {
-    this.authToken = authToken;
+    this.authToken = authToken == null? null: Arrays.copyOf(authToken, authToken.length);
   }
 
   /**
@@ -154,11 +139,12 @@ public class Server implements ServerListener
     int port;
     if (args.length > 0) {
       port = Integer.parseInt(args[0]);
-    } else {
+    }
+    else {
       port = 0;
     }
 
-    DefaultEventLoop eventloop = DefaultEventLoop.createEventLoop("alone");
+    DefaultEventLoop eventloop = new DefaultEventLoop("alone");
     eventloop.start(null, port, new Server(port));
     new Thread(eventloop).start();
   }
@@ -171,12 +157,12 @@ public class Server implements ServerListener
 
   private final HashMap<String, DataList> publisherBuffers = new HashMap<String, DataList>();
   private final ConcurrentHashMap<String, LogicalNode> subscriberGroups = new ConcurrentHashMap<String, LogicalNode>();
-  private final ConcurrentHashMap<String, AbstractLengthPrependerClient> publisherChannels = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, AbstractLengthPrependerClient> subscriberChannels = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, AbstractLengthPrependerClient> publisherChannels = new ConcurrentHashMap<String, AbstractLengthPrependerClient>();
+  private final ConcurrentHashMap<String, AbstractLengthPrependerClient> subscriberChannels = new ConcurrentHashMap<String, AbstractLengthPrependerClient>();
   private final int blockSize;
   private final int numberOfCacheBlocks;
 
-  private void handlePurgeRequest(PurgeRequestTuple request, final AbstractLengthPrependerClient ctx) throws IOException
+  public void handlePurgeRequest(PurgeRequestTuple request, final AbstractLengthPrependerClient ctx) throws IOException
   {
     DataList dl;
     dl = publisherBuffers.get(request.getIdentifier());
@@ -184,14 +170,24 @@ public class Server implements ServerListener
     byte[] message;
     if (dl == null) {
       message = ("Invalid identifier '" + request.getIdentifier() + "'").getBytes();
-    } else {
+    }
+    else {
       dl.purge(request.getBaseSeconds(), request.getWindowId());
       message = ("Request sent for processing: " + request).getBytes();
     }
 
     final byte[] tuple = PayloadTuple.getSerializedTuple(0, message.length);
     System.arraycopy(message, 0, tuple, tuple.length - message.length, message.length);
-    ctx.write(tuple);
+    serverHelperExecutor.submit(new Runnable()
+    {
+      @Override
+      public void run()
+      {
+        ctx.write(tuple);
+        eventloop.disconnect(ctx);
+      }
+
+    });
   }
 
   private void handleResetRequest(ResetRequestTuple request, final AbstractLengthPrependerClient ctx) throws IOException
@@ -202,7 +198,8 @@ public class Server implements ServerListener
     byte[] message;
     if (dl == null) {
       message = ("Invalid identifier '" + request.getIdentifier() + "'").getBytes();
-    } else {
+    }
+    else {
       AbstractLengthPrependerClient channel = publisherChannels.remove(request.getIdentifier());
       if (channel != null) {
         eventloop.disconnect(channel);
@@ -213,7 +210,16 @@ public class Server implements ServerListener
 
     final byte[] tuple = PayloadTuple.getSerializedTuple(0, message.length);
     System.arraycopy(message, 0, tuple, tuple.length - message.length, message.length);
-    ctx.write(tuple);
+    serverHelperExecutor.submit(new Runnable()
+    {
+      @Override
+      public void run()
+      {
+        ctx.write(tuple);
+        eventloop.disconnect(ctx);
+      }
+
+    });
   }
 
   /**
@@ -243,7 +249,8 @@ public class Server implements ServerListener
       ln = subscriberGroups.get(type);
       ln.boot(eventloop);
       ln.addConnection(connection);
-    } else {
+    }
+    else {
       /*
        * if there is already a datalist registered for the type in which this client is interested,
        * then get a iterator on the data items of that data list. If the datalist is not registered,
@@ -253,10 +260,9 @@ public class Server implements ServerListener
       if (publisherBuffers.containsKey(upstream_identifier)) {
         dl = publisherBuffers.get(upstream_identifier);
         //logger.debug("old list = {}", dl);
-      } else {
-        dl = Tuple.FAST_VERSION.equals(request.getVersion()) ?
-            new FastDataList(upstream_identifier, blockSize, numberOfCacheBlocks) :
-            new DataList(upstream_identifier, blockSize, numberOfCacheBlocks);
+      }
+      else {
+        dl = Tuple.FAST_VERSION.equals(request.getVersion()) ? new FastDataList(upstream_identifier, blockSize, numberOfCacheBlocks, 0) : new DataList(upstream_identifier, blockSize, numberOfCacheBlocks, 0);
         publisherBuffers.put(upstream_identifier, dl);
         //logger.debug("new list = {}", dl);
       }
@@ -306,13 +312,13 @@ public class Server implements ServerListener
       dl = publisherBuffers.get(identifier);
       try {
         dl.rewind(request.getBaseSeconds(), request.getWindowId());
-      } catch (IOException ie) {
+      }
+      catch (IOException ie) {
         throw new RuntimeException(ie);
       }
-    } else {
-      dl = Tuple.FAST_VERSION.equals(request.getVersion()) ?
-          new FastDataList(identifier, blockSize, numberOfCacheBlocks) :
-          new DataList(identifier, blockSize, numberOfCacheBlocks);
+    }
+    else {
+      dl = Tuple.FAST_VERSION.equals(request.getVersion()) ? new FastDataList(identifier, blockSize, numberOfCacheBlocks) : new DataList(identifier, blockSize, numberOfCacheBlocks);
       publisherBuffers.put(identifier, dl);
     }
     dl.setSecondaryStorage(storage, storageHelperExecutor);
@@ -346,15 +352,9 @@ public class Server implements ServerListener
 
   class AuthClient extends com.datatorrent.bufferserver.client.AuthClient
   {
-    boolean ignore;
-
     @Override
     public void onMessage(byte[] buffer, int offset, int size)
     {
-      if (ignore) {
-        return;
-      }
-
       authenticateMessage(buffer, offset, size);
 
       unregistered(key);
@@ -368,21 +368,20 @@ public class Server implements ServerListener
         client.transferBuffer(buffer, readOffset + size, len);
       }
 
-      ignore = true;
+      /*
+       * Remaining data has been transferred to next client in the chain and is going to be processed there so we would
+       * not be processing it here, hence discarding it.
+       */
+      discardReadBuffer();
     }
   }
 
   class UnidentifiedClient extends SeedDataClient
   {
-    boolean ignore;
 
     @Override
     public void onMessage(byte[] buffer, int offset, int size)
     {
-      if (ignore) {
-        return;
-      }
-
       Tuple request = Tuple.getTuple(buffer, offset, size);
       switch (request.getType()) {
         case PUBLISHER_REQUEST:
@@ -395,7 +394,7 @@ public class Server implements ServerListener
           PublishRequestTuple publisherRequest = (PublishRequestTuple)request;
 
           DataList dl = handlePublisherRequest(publisherRequest, this);
-          dl.setAutoFlushExecutor(serverHelperExecutor);
+          dl.setAutoflushExecutor(serverHelperExecutor);
 
           Publisher publisher;
           if (publisherRequest.getVersion().equals(Tuple.FAST_VERSION)) {
@@ -413,7 +412,8 @@ public class Server implements ServerListener
               }
 
             };
-          } else {
+          }
+          else {
             publisher = new Publisher(dl, (long)request.getBaseSeconds() << 32 | request.getWindowId());
           }
 
@@ -425,7 +425,12 @@ public class Server implements ServerListener
           if (len > 0) {
             publisher.transferBuffer(this.buffer, readOffset + size, len);
           }
-          ignore = true;
+
+          /*
+           * Remaining data transferred to next client and being processed there, not processed here anymore hence
+           * discarding it.
+           */
+          discardReadBuffer();
 
           break;
 
@@ -434,7 +439,11 @@ public class Server implements ServerListener
            * unregister the unidentified client since its job is done!
            */
           unregistered(key);
-          ignore = true;
+          /*
+           * Control is being transferred to next client in the chain so no more processing in this client after this
+           * message.
+           */
+          discardReadBuffer();
           logger.info("Received subscriber request: {}", request);
 
           SubscribeRequestTuple subscriberRequest = (SubscribeRequestTuple)request;
@@ -446,11 +455,10 @@ public class Server implements ServerListener
 //            bufferSize = 16 * 1024;
 //          }
           if (subscriberRequest.getVersion().equals(Tuple.FAST_VERSION)) {
-            subscriber = new Subscriber(subscriberRequest.getStreamType(), subscriberRequest.getMask(),
-                subscriberRequest.getPartitions(), bufferSize);
-          } else {
-            subscriber = new Subscriber(subscriberRequest.getStreamType(), subscriberRequest.getMask(),
-                subscriberRequest.getPartitions(), bufferSize)
+            subscriber = new Subscriber(subscriberRequest.getStreamType(), subscriberRequest.getMask(), subscriberRequest.getPartitions(), bufferSize);
+          }
+          else {
+            subscriber = new Subscriber(subscriberRequest.getStreamType(), subscriberRequest.getMask(), subscriberRequest.getPartitions(), bufferSize)
             {
               @Override
               public int readSize()
@@ -485,7 +493,8 @@ public class Server implements ServerListener
           logger.info("Received purge request: {}", request);
           try {
             handlePurgeRequest((PurgeRequestTuple)request, this);
-          } catch (IOException io) {
+          }
+          catch (IOException io) {
             throw new RuntimeException(io);
           }
           break;
@@ -494,7 +503,8 @@ public class Server implements ServerListener
           logger.info("Received reset all request: {}", request);
           try {
             handleResetRequest((ResetRequestTuple)request, this);
-          } catch (IOException io) {
+          }
+          catch (IOException io) {
             throw new RuntimeException(io);
           }
           break;
@@ -524,8 +534,7 @@ public class Server implements ServerListener
     @Override
     public void onMessage(byte[] buffer, int offset, int size)
     {
-      logger.warn("Received data when no data is expected: {}",
-          Arrays.toString(Arrays.copyOfRange(buffer, offset, offset + size)));
+      logger.warn("Received data when no data is expected: {}", Arrays.toString(Arrays.copyOfRange(buffer, offset, offset + size)));
     }
 
     @Override
@@ -545,8 +554,7 @@ public class Server implements ServerListener
     @Override
     public String toString()
     {
-      return "Server.Subscriber{" + "type=" + type + ", mask=" + mask +
-          ", partitions=" + (partitions == null ? "null" : Arrays.toString(partitions)) + '}';
+      return "Server.Subscriber{" + "type=" + type + ", mask=" + mask + ", partitions=" + (partitions == null ? "null" : Arrays.toString(partitions)) + '}';
     }
 
     private volatile boolean torndown;
@@ -610,45 +618,8 @@ public class Server implements ServerListener
       dirty = true;
     }
 
-    /**
-     * Schedules a task to conditionally resume I/O channel read operations.
-     * No-op if {@linkplain java.nio.channels.SelectionKey#OP_READ OP_READ}
-     * is already set in the key {@linkplain java.nio.channels.SelectionKey#interestOps() interestOps}.
-     * Otherwise, calls {@linkplain #read(int) read(0)} to process data
-     * left in the Publisher read buffer and registers {@linkplain java.nio.channels.SelectionKey#OP_READ OP_READ}
-     * in the key {@linkplain java.nio.channels.SelectionKey#interestOps() interestOps}.
-     * @return true
-     */
-    @Override
-    public boolean resumeReadIfSuspended()
-    {
-      eventloop.submit(new Runnable()
-      {
-        @Override
-        public void run()
-        {
-          final int interestOps = key.interestOps();
-          if ((interestOps & SelectionKey.OP_READ) == 0) {
-            if (readExt(0)) {
-              logger.debug("Resuming read on key {} with attachment {}", key, key.attachment());
-              key.interestOps(interestOps | SelectionKey.OP_READ);
-            } else {
-              logger.debug("Keeping read on key {} with attachment {} suspended. ", key, key.attachment(), datalist);
-              datalist.notifyListeners();
-            }
-          }
-        }
-      });
-      return true;
-    }
-
     @Override
     public void read(int len)
-    {
-      readExt(len);
-    }
-
-    private boolean readExt(int len)
     {
       //logger.debug("read {} bytes", len);
       writeOffset += len;
@@ -665,21 +636,17 @@ public class Server implements ServerListener
                    * so we allocate a new byteBuffer and copy over the partially written data to the
                    * new byteBuffer and start as if we always had full room but not enough data.
                    */
-                  if (!switchToNewBufferOrSuspendRead(buffer, readOffset)) {
-                    return false;
-                  }
+                  switchToNewBuffer(buffer, readOffset);
                 }
-              } else if (dirty) {
+              }
+              else if (dirty) {
                 dirty = false;
                 datalist.flush(writeOffset);
               }
-              return true;
+              return;
 
             case 0:
               continue;
-
-            default:
-              break;
           }
         }
 
@@ -687,56 +654,42 @@ public class Server implements ServerListener
           onMessage(buffer, readOffset, size);
           readOffset += size;
           size = 0;
-        } else {
+        }
+        else {
           if (writeOffset == buffer.length) {
             dirty = false;
             datalist.flush(writeOffset);
             /*
              * hit wall while writing serialized data, so have to allocate a new byteBuffer.
              */
-            if (!switchToNewBufferOrSuspendRead(buffer, readOffset - VarInt.getSize(size))) {
-              readOffset -= VarInt.getSize(size);
-              size = 0;
-              return false;
-            }
+            switchToNewBuffer(buffer, readOffset - VarInt.getSize(size));
             size = 0;
-          } else if (dirty) {
+          }
+          else if (dirty) {
             dirty = false;
             datalist.flush(writeOffset);
           }
-          return true;
+          return;
         }
       }
       while (true);
     }
 
-    private boolean switchToNewBufferOrSuspendRead(final byte[] array, final int offset)
+    public void switchToNewBuffer(byte[] array, int offset)
     {
-      if (switchToNewBuffer(array, offset)) {
-        return true;
+      byte[] newBuffer = new byte[datalist.getBlockSize()];
+      byteBuffer = ByteBuffer.wrap(newBuffer);
+      if (array == null || array.length - offset == 0) {
+        writeOffset = 0;
       }
-      datalist.suspendRead(this);
-      return false;
-    }
-
-    private boolean switchToNewBuffer(final byte[] array, final int offset)
-    {
-      if (datalist.isMemoryBlockAvailable()) {
-        final byte[] newBuffer = datalist.newBuffer();
-        byteBuffer = ByteBuffer.wrap(newBuffer);
-        if (array == null || array.length - offset == 0) {
-          writeOffset = 0;
-        } else {
-          writeOffset = array.length - offset;
-          System.arraycopy(buffer, offset, newBuffer, 0, writeOffset);
-          byteBuffer.position(writeOffset);
-        }
-        buffer = newBuffer;
-        readOffset = 0;
-        datalist.addBuffer(buffer);
-        return true;
+      else {
+        writeOffset = array.length - offset;
+        System.arraycopy(buffer, offset, newBuffer, 0, writeOffset);
+        byteBuffer.position(writeOffset);
       }
-      return false;
+      buffer = newBuffer;
+      readOffset = 0;
+      datalist.addBuffer(buffer);
     }
 
     @Override
@@ -754,7 +707,8 @@ public class Server implements ServerListener
       if (cce instanceof RejectedExecutionException && serverHelperExecutor.isTerminated()) {
         logger.warn("Terminated Executor Exception for {}.", this, cce);
         el.disconnect(this);
-      } else {
+      }
+      else {
         super.handleException(cce, el);
       }
     }
@@ -762,7 +716,7 @@ public class Server implements ServerListener
     @Override
     public String toString()
     {
-      return getClass().getName() + '@' + Integer.toHexString(hashCode()) + " {datalist=" + datalist + '}';
+      return "Server.Publisher{" + "datalist=" + datalist + '}';
     }
 
     private volatile boolean torndown;
@@ -783,9 +737,8 @@ public class Server implements ServerListener
        */
 
       /**
-       * since the publisher server died, the queue which it was using would stop pumping the data unless
-       * a new publisher comes up with the same name. We leave it to the stream to decide when to bring up a new node
-       * with the same identifier as the one which just died.
+       * since the publisher server died, the queue which it was using would stop pumping the data unless a new publisher comes up with the same name. We leave
+       * it to the stream to decide when to bring up a new node with the same identifier as the one which just died.
        */
       if (publisherChannels.containsValue(this)) {
         final Iterator<Entry<String, AbstractLengthPrependerClient>> i = publisherChannels.entrySet().iterator();
@@ -814,24 +767,24 @@ public class Server implements ServerListener
 
   }
 
-  abstract class SeedDataClient extends AbstractLengthPrependerClient
+  static abstract class SeedDataClient extends AbstractLengthPrependerClient
   {
 
-    public SeedDataClient()
+    SeedDataClient()
     {
     }
 
-    public SeedDataClient(int readBufferSize, int sendBufferSize)
+    SeedDataClient(int readBufferSize, int sendBufferSize)
     {
       super(readBufferSize, sendBufferSize);
     }
 
-    public SeedDataClient(byte[] readbuffer, int position, int sendBufferSize)
+    SeedDataClient(byte[] readbuffer, int position, int sendBufferSize)
     {
       super(readbuffer, position, sendBufferSize);
     }
 
-    public void transferBuffer(byte[] array, int offset, int len)
+    void transferBuffer(byte[] array, int offset, int len)
     {
       int remainingCapacity;
       do {
@@ -839,7 +792,8 @@ public class Server implements ServerListener
         if (len < remainingCapacity) {
           remainingCapacity = len;
           byteBuffer.position(writeOffset + remainingCapacity);
-        } else {
+        }
+        else {
           byteBuffer.position(buffer.length);
         }
         System.arraycopy(array, offset, buffer, writeOffset, remainingCapacity);

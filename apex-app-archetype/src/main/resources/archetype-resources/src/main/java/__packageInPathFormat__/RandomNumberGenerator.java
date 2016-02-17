@@ -29,7 +29,7 @@ public class RandomNumberGenerator extends BaseOperator implements InputOperator
   @Override
   public void emitTuples()
   {
-    if (count++ < numTuples) {
+    if (count++ < 100) {
       out.emit(Math.random());
     }
   }

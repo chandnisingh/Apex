@@ -1,44 +1,29 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.common.util;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectStreamException;
-import java.io.OutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.net.URI;
 import java.util.EnumSet;
 import java.util.List;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.CreateFlag;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileContext;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.Options;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.RemoteIterator;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
@@ -47,6 +32,7 @@ import com.google.common.collect.Lists;
 
 import com.datatorrent.api.StorageAgent;
 import com.datatorrent.api.annotation.Stateless;
+
 import com.datatorrent.netlet.util.DTThrowable;
 
 /**
@@ -56,7 +42,7 @@ import com.datatorrent.netlet.util.DTThrowable;
  */
 public class FSStorageAgent implements StorageAgent, Serializable
 {
-  public static final String TMP_FILE = "_tmp";
+  public static final String TMP_FILE = "._COPYING_";
   protected static final String STATELESS_CHECKPOINT_WINDOW_ID = Long.toHexString(Stateless.WINDOW_ID);
   public final String path;
   protected final transient FileContext fileContext;
@@ -66,7 +52,8 @@ public class FSStorageAgent implements StorageAgent, Serializable
     kryo = new Kryo();
   }
 
-  protected FSStorageAgent()
+  @SuppressWarnings("unused")
+  private FSStorageAgent()
   {
     path = null;
     fileContext = null;
@@ -82,10 +69,12 @@ public class FSStorageAgent implements StorageAgent, Serializable
 
       if (pathUri.getScheme() != null) {
         fileContext = FileContext.getFileContext(pathUri, conf == null ? new Configuration() : conf);
-      } else {
+      }
+      else {
         fileContext = FileContext.getFileContext(conf == null ? new Configuration() : conf);
       }
-    } catch (IOException ex) {
+    }
+    catch (IOException ex) {
       throw new RuntimeException(ex);
     }
   }
@@ -104,23 +93,27 @@ public class FSStorageAgent implements StorageAgent, Serializable
         Options.CreateOpts.CreateParent.createParent());
       store(stream, object);
       stateSaved = true;
-    } catch (Throwable t) {
+    }
+    catch (Throwable t) {
       logger.debug("while saving {} {}", operatorId, window, t);
       stateSaved = false;
       DTThrowable.rethrow(t);
-    } finally {
+    }
+    finally {
       try {
         if (stream != null) {
           stream.close();
         }
-      } catch (IOException ie) {
+      }
+      catch (IOException ie) {
         stateSaved = false;
         throw new RuntimeException(ie);
-      } finally {
+      }
+      finally {
         if (stateSaved) {
           logger.debug("Saving {}: {}", operatorId, window);
           fileContext.rename(lPath, new Path(path + Path.SEPARATOR + operatorIdStr + Path.SEPARATOR + window),
-              Options.Rename.OVERWRITE);
+            Options.Rename.OVERWRITE);
         }
       }
     }
@@ -135,7 +128,8 @@ public class FSStorageAgent implements StorageAgent, Serializable
     FSDataInputStream stream = fileContext.open(lPath);
     try {
       return retrieve(stream);
-    } finally {
+    }
+    finally {
       stream.close();
     }
   }

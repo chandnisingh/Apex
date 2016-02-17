@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.engine;
 
@@ -69,15 +66,14 @@ public class InputNode extends Node<InputOperator>
     long spinMillis = context.getValue(OperatorContext.SPIN_MILLIS);
     final boolean handleIdleTime = operator instanceof IdleTimeHandler;
 
-    boolean insideApplicationWindow = applicationWindowCount != 0;
+    boolean insideWindow = applicationWindowCount != 0;
     boolean doCheckpoint = false;
-    boolean insideStreamingWindow = false;
 
     try {
       while (alive) {
         Tuple t = controlTuples.sweep();
         if (t == null) {
-          if (insideStreamingWindow) {
+          if (insideWindow) {
             int generatedTuples = 0;
 
             for (Sink<Object> cs : sinks) {
@@ -112,9 +108,8 @@ public class InputNode extends Node<InputOperator>
               }
               controlTupleCount++;
               currentWindowId = t.getWindowId();
-              insideStreamingWindow = true;
               if (applicationWindowCount == 0) {
-                insideApplicationWindow = true;
+                insideWindow = true;
                 operator.beginWindow(currentWindowId);
               }
               operator.emitTuples(); /* give at least one chance to emit the tuples */
@@ -123,9 +118,8 @@ public class InputNode extends Node<InputOperator>
 
             case END_WINDOW:
               endWindowEmitTime = System.currentTimeMillis();
-              insideStreamingWindow = false;
               if (++applicationWindowCount == APPLICATION_WINDOW_COUNT) {
-                insideApplicationWindow = false;
+                insideWindow = false;
                 operator.endWindow();
                 applicationWindowCount = 0;
               }
@@ -148,7 +142,7 @@ public class InputNode extends Node<InputOperator>
 
               ContainerStats.OperatorStats stats = new ContainerStats.OperatorStats();
               reportStats(stats, currentWindowId);
-              if(!insideApplicationWindow){
+              if(!insideWindow){
                 stats.metrics = collectMetrics();
               }
               handleRequests(currentWindowId);
@@ -217,7 +211,7 @@ public class InputNode extends Node<InputOperator>
       }
     }
 
-    if (insideApplicationWindow) {
+    if (insideWindow) {
       endWindowEmitTime = System.currentTimeMillis();
       operator.endWindow();
       if (++applicationWindowCount == APPLICATION_WINDOW_COUNT) {

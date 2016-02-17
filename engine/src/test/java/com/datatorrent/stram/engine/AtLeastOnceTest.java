@@ -1,24 +1,20 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.engine;
 
-import java.io.File;
 import java.io.IOException;
 
 import org.junit.After;
@@ -28,10 +24,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.datatorrent.api.Context;
 import com.datatorrent.api.DAG.Locality;
-
-import com.datatorrent.common.util.AsyncFSStorageAgent;
 import com.datatorrent.stram.StramLocalCluster;
 import com.datatorrent.stram.engine.ProcessingModeTests.CollectorOperator;
 import com.datatorrent.stram.plan.logical.LogicalPlan;
@@ -63,10 +56,6 @@ public class AtLeastOnceTest
     CollectorOperator.collection.clear();
     int maxTuples = 30;
     LogicalPlan dag = new LogicalPlan();
-    String workingDir = new File("target/testInputOperatorRecovery").getAbsolutePath();
-    AsyncFSStorageAgent asyncFSStorageAgent = new AsyncFSStorageAgent(workingDir, null);
-    asyncFSStorageAgent.setSyncCheckpoint(true);
-    dag.setAttribute(Context.OperatorContext.STORAGE_AGENT, asyncFSStorageAgent);
     dag.getAttributes().put(LogicalPlan.CHECKPOINT_WINDOW_COUNT, 2);
     dag.getAttributes().put(LogicalPlan.STREAMING_WINDOW_SIZE_MILLIS, 300);
     dag.getAttributes().put(LogicalPlan.CONTAINERS_MAX_COUNT, 1);
@@ -90,10 +79,6 @@ public class AtLeastOnceTest
     CollectorOperator.collection.clear();
     int maxTuples = 30;
     LogicalPlan dag = new LogicalPlan();
-    String workingDir = new File("target/testOperatorRecovery").getAbsolutePath();
-    AsyncFSStorageAgent asyncFSStorageAgent = new AsyncFSStorageAgent(workingDir, null);
-    asyncFSStorageAgent.setSyncCheckpoint(true);
-    dag.setAttribute(Context.OperatorContext.STORAGE_AGENT, asyncFSStorageAgent);
     dag.getAttributes().put(LogicalPlan.CHECKPOINT_WINDOW_COUNT, 2);
     dag.getAttributes().put(LogicalPlan.STREAMING_WINDOW_SIZE_MILLIS, 300);
     dag.getAttributes().put(LogicalPlan.CONTAINERS_MAX_COUNT, 1);
@@ -118,10 +103,6 @@ public class AtLeastOnceTest
     CollectorOperator.collection.clear();
     int maxTuples = 30;
     LogicalPlan dag = new LogicalPlan();
-    String workingDir = new File("target/testOperatorRecovery").getAbsolutePath();
-    AsyncFSStorageAgent asyncFSStorageAgent = new AsyncFSStorageAgent(workingDir, null);
-    asyncFSStorageAgent.setSyncCheckpoint(true);
-    dag.setAttribute(Context.OperatorContext.STORAGE_AGENT, asyncFSStorageAgent);
     //dag.getAttributes().get(DAG.HEARTBEAT_INTERVAL_MILLIS, 400);
     dag.getAttributes().put(LogicalPlan.CHECKPOINT_WINDOW_COUNT, 2);
     dag.getAttributes().put(LogicalPlan.STREAMING_WINDOW_SIZE_MILLIS, 300);

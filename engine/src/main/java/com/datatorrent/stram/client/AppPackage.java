@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.client;
 
@@ -39,19 +36,17 @@ import org.slf4j.LoggerFactory;
  *
  * @since 1.0.3
  */
-public class AppPackage extends JarFile
+public class AppPackage extends JarFile implements Closeable
 {
   public static final String ATTRIBUTE_DT_ENGINE_VERSION = "DT-Engine-Version";
   public static final String ATTRIBUTE_DT_APP_PACKAGE_NAME = "DT-App-Package-Name";
   public static final String ATTRIBUTE_DT_APP_PACKAGE_VERSION = "DT-App-Package-Version";
-  public static final String ATTRIBUTE_DT_APP_PACKAGE_GROUP_ID = "DT-App-Package-Group-Id";
   public static final String ATTRIBUTE_CLASS_PATH = "Class-Path";
   public static final String ATTRIBUTE_DT_APP_PACKAGE_DISPLAY_NAME = "DT-App-Package-Display-Name";
   public static final String ATTRIBUTE_DT_APP_PACKAGE_DESCRIPTION = "DT-App-Package-Description";
 
   private final String appPackageName;
   private final String appPackageVersion;
-  private final String appPackageGroupId;
   private final String dtEngineVersion;
   private final String appPackageDescription;
   private final String appPackageDisplayName;
@@ -68,7 +63,6 @@ public class AppPackage extends JarFile
   private final Set<String> configs = new TreeSet<String>();
 
   private final File resourcesDirectory;
-  private final boolean cleanOnClose;
 
   public static class AppInfo
   {
@@ -103,27 +97,14 @@ public class AppPackage extends JarFile
    * If app directory is to be processed, there may be resource leak in the class loader. Only pass true for short-lived
    * applications
    *
-   * If contentFolder is not null, it will try to create the contentFolder, file will be retained on disk after App Package is closed
-   * If contentFolder is null, temp folder will be created and will be cleaned on close()
-   *
    * @param file
-   * @param contentFolder  the folder that the app package will be extracted to
    * @param processAppDirectory
    * @throws java.io.IOException
    * @throws net.lingala.zip4j.exception.ZipException
    */
-  public AppPackage(File file, File contentFolder, boolean processAppDirectory) throws IOException, ZipException
+  public AppPackage(File file, boolean processAppDirectory) throws IOException, ZipException
   {
     super(file);
-
-    if (contentFolder != null) {
-      FileUtils.forceMkdir(contentFolder);
-      cleanOnClose = false;
-    } else {
-      cleanOnClose =  true;
-      contentFolder = new File("/tmp/dt-appPackage-" + Long.toString(System.nanoTime()));
-    }
-
     Manifest manifest = getManifest();
     if (manifest == null) {
       throw new IOException("Not a valid app package. MANIFEST.MF is not present.");
@@ -131,16 +112,15 @@ public class AppPackage extends JarFile
     Attributes attr = manifest.getMainAttributes();
     appPackageName = attr.getValue(ATTRIBUTE_DT_APP_PACKAGE_NAME);
     appPackageVersion = attr.getValue(ATTRIBUTE_DT_APP_PACKAGE_VERSION);
-    appPackageGroupId = attr.getValue(ATTRIBUTE_DT_APP_PACKAGE_GROUP_ID);
     dtEngineVersion = attr.getValue(ATTRIBUTE_DT_ENGINE_VERSION);
     appPackageDisplayName = attr.getValue(ATTRIBUTE_DT_APP_PACKAGE_DISPLAY_NAME);
     appPackageDescription = attr.getValue(ATTRIBUTE_DT_APP_PACKAGE_DESCRIPTION);
     String classPathString = attr.getValue(ATTRIBUTE_CLASS_PATH);
     if (appPackageName == null || appPackageVersion == null || classPathString == null) {
-      throw new IOException("Not a valid app package.  App Package Name or Version or Class-Path is missing from MANIFEST.MF");
+      throw new IOException("Not a valid app package.  Class-Path is missing from MANIFEST.MF");
     }
     classPath.addAll(Arrays.asList(StringUtils.split(classPathString, " ")));
-    directory = contentFolder;
+    directory = new File("/tmp/dt-appPackage-" + Long.toString(System.nanoTime()));
     extractToDirectory(directory, file);
     if (processAppDirectory) {
       processAppDirectory(new File(directory, "app"));
@@ -166,25 +146,6 @@ public class AppPackage extends JarFile
         }
       }
     }
-  }
-
-  /**
-   * Creates an App Package object.
-   *
-   * If app directory is to be processed, there may be resource leak in the class loader. Only pass true for short-lived
-   * applications
-   *
-   * Files in app package will be extracted to tmp folder and will be cleaned on close()
-   * The close() method could be explicitly called or implicitly called by GC finalize()
-   *
-   * @param file
-   * @param processAppDirectory
-   * @throws java.io.IOException
-   * @throws net.lingala.zip4j.exception.ZipException
-   */
-  public AppPackage(File file, boolean processAppDirectory) throws IOException, ZipException
-  {
-    this(file, null, processAppDirectory);
   }
 
   public static void extractToDirectory(File directory, File appPackageFile) throws ZipException
@@ -216,15 +177,7 @@ public class AppPackage extends JarFile
   public void close() throws IOException
   {
     super.close();
-    if (cleanOnClose) {
-      cleanContent();
-    }
-  }
-
-  public void cleanContent() throws IOException
-  {
     FileUtils.deleteDirectory(directory);
-    LOG.debug("App Package {}-{} folder {} is removed", appPackageName, appPackageVersion, directory.getAbsolutePath());
   }
 
   public String getAppPackageName()
@@ -235,11 +188,6 @@ public class AppPackage extends JarFile
   public String getAppPackageVersion()
   {
     return appPackageVersion;
-  }
-
-  public String getAppPackageGroupId()
-  {
-    return appPackageGroupId;
   }
 
   public String getAppPackageDescription()

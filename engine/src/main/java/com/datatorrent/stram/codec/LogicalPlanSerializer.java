@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.codec;
 
@@ -88,7 +85,7 @@ public class LogicalPlanSerializer extends JsonSerializer<LogicalPlan>
    * @param dag
    * @return
    */
-  public static Map<String, Object> convertToMap(LogicalPlan dag, boolean includeModules)
+  public static Map<String, Object> convertToMap(LogicalPlan dag)
   {
     HashMap<String, Object> result = new HashMap<String, Object>();
     ArrayList<Object> operatorArray = new ArrayList< Object>();
@@ -200,15 +197,6 @@ public class LogicalPlanSerializer extends JsonSerializer<LogicalPlan>
         streamDetailMap.put("locality", streamMeta.getLocality().name());
       }
     }
-
-    if (includeModules) {
-      ArrayList<Map<String, Object>> modulesArray = new ArrayList<>();
-      result.put("modules", modulesArray);
-      for(LogicalPlan.ModuleMeta meta : dag.getAllModules()) {
-        modulesArray.add(getLogicalModuleDetails(dag, meta));
-      }
-    }
-
     return result;
   }
 
@@ -221,7 +209,7 @@ public class LogicalPlanSerializer extends JsonSerializer<LogicalPlan>
       String operatorKey = LogicalPlanConfiguration.OPERATOR_PREFIX + operatorMeta.getName();
       Operator operator = operatorMeta.getOperator();
       props.setProperty(operatorKey + "." + LogicalPlanConfiguration.OPERATOR_CLASSNAME, operator.getClass().getName());
-      BeanMap operatorProperties = LogicalPlanConfiguration.getObjectProperties(operator);
+      BeanMap operatorProperties = LogicalPlanConfiguration.getOperatorProperties(operator);
       @SuppressWarnings("rawtypes")
       Iterator entryIterator = operatorProperties.entryIterator();
       while (entryIterator.hasNext()) {
@@ -332,43 +320,13 @@ public class LogicalPlanSerializer extends JsonSerializer<LogicalPlan>
 
   public static JSONObject convertToJsonObject(LogicalPlan dag)
   {
-    return new JSONObject(convertToMap(dag, false));
+    return new JSONObject(convertToMap(dag));
   }
 
   @Override
-  public void serialize(LogicalPlan dag, JsonGenerator jg, SerializerProvider sp) throws IOException,
-      JsonProcessingException
+  public void serialize(LogicalPlan dag, JsonGenerator jg, SerializerProvider sp) throws IOException, JsonProcessingException
   {
-    jg.writeObject(convertToMap(dag, false));
-  }
-
-  /**
-   * Return information about operators and inner modules of a module.
-   *
-   * @param dag        top level DAG
-   * @param moduleMeta module information. DAG within module is used for constructing response.
-   * @return
-   */
-  private static Map<String, Object> getLogicalModuleDetails(LogicalPlan dag, LogicalPlan.ModuleMeta moduleMeta)
-  {
-    Map<String, Object> moduleDetailMap = new HashMap<String, Object>();
-    ArrayList<String> operatorArray = new ArrayList<>();
-    moduleDetailMap.put("name", moduleMeta.getName());
-    moduleDetailMap.put("className", moduleMeta.getModule().getClass().getName());
-
-    moduleDetailMap.put("operators", operatorArray);
-    for (OperatorMeta operatorMeta : moduleMeta.getDag().getAllOperators()) {
-      if (operatorMeta.getModuleName() == null) {
-        String fullName = moduleMeta.getFullName() + LogicalPlan.MODULE_NAMESPACE_SEPARATOR + operatorMeta.getName();
-        operatorArray.add(fullName);
-      }
-    }
-    ArrayList<Map<String, Object>> modulesArray = new ArrayList<>();
-    moduleDetailMap.put("modules", modulesArray);
-    for (LogicalPlan.ModuleMeta meta : moduleMeta.getDag().getAllModules()) {
-      modulesArray.add(getLogicalModuleDetails(dag, meta));
-    }
-    return moduleDetailMap;
+    jg.writeObject(convertToMap(dag));
   }
 
 }

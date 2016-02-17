@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.client;
 
@@ -25,19 +22,19 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
+import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Sets;
 
+import org.mozilla.javascript.Scriptable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
@@ -60,10 +57,6 @@ import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.security.client.RMDelegationTokenIdentifier;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.log4j.DTLoggerFactory;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
 
 import com.datatorrent.api.StreamingApplication;
 
@@ -92,12 +85,10 @@ public class StramClientUtils
   public static final String SUBDIR_PROFILES = "profiles";
   public static final String SUBDIR_CONF = "conf";
   public static final int RESOURCEMANAGER_CONNECT_MAX_WAIT_MS_OVERRIDE = 10 * 1000;
-  public static final String DT_HDFS_TOKEN_MAX_LIFE_TIME = StreamingApplication.DT_PREFIX + "namenode.delegation.token.max-lifetime";
   public static final String HDFS_TOKEN_MAX_LIFE_TIME = "dfs.namenode.delegation.token.max-lifetime";
-  public static final String DT_RM_TOKEN_MAX_LIFE_TIME = StreamingApplication.DT_PREFIX + "resourcemanager.delegation.token.max-lifetime" ;
+  public static final String RM_TOKEN_MAX_LIFE_TIME = YarnConfiguration.DELEGATION_TOKEN_MAX_LIFETIME_KEY;
   public static final String KEY_TAB_FILE = StramUserLogin.DT_AUTH_PREFIX + "store.keytab";
   public static final String TOKEN_ANTICIPATORY_REFRESH_FACTOR = StramUserLogin.DT_AUTH_PREFIX + "token.refresh.factor";
-  public static final long DELEGATION_TOKEN_MAX_LIFETIME_DEFAULT = 7 * 24 * 60 * 60 * 1000;
 
   /**
    * TBD<p>
@@ -253,7 +244,10 @@ public class StramClientUtils
       for (String rmId : ConfigUtils.getRMHAIds(conf)) {
         LOG.info("Yarn Resource Manager id: {}", rmId);
         // Set RM_ID to get the corresponding RM_ADDRESS
-        services.add(SecurityUtil.buildTokenService(getRMHAAddress(rmId)).toString());
+        services.add(SecurityUtil.buildTokenService(NetUtils.createSocketAddr(
+                conf.get(RM_HOSTNAME_PREFIX + rmId),
+                YarnConfiguration.DEFAULT_RM_PORT,
+                RM_HOSTNAME_PREFIX + rmId)).toString());
       }
       Text rmTokenService = new Text(Joiner.on(',').join(services));
 
@@ -286,20 +280,6 @@ public class StramClientUtils
       LOG.info("RM dt {}", token);
 
       credentials.addToken(token.getService(), token);
-    }
-
-    public InetSocketAddress getRMHAAddress(String rmId)
-    {
-      YarnConfiguration yarnConf;
-      if (conf instanceof YarnConfiguration) {
-        yarnConf = (YarnConfiguration)conf;
-      } else {
-        yarnConf = new YarnConfiguration(conf);
-      }
-      yarnConf.set(ConfigUtils.RM_HA_ID, rmId);
-      InetSocketAddress socketAddr = yarnConf.getSocketAddr(YarnConfiguration.RM_ADDRESS, YarnConfiguration.DEFAULT_RM_ADDRESS, YarnConfiguration.DEFAULT_RM_PORT);
-      yarnConf.unset(ConfigUtils.RM_HA_ID);
-      return socketAddr;
     }
 
   }
@@ -650,73 +630,57 @@ public class StramClientUtils
 
   public static void evalProperties(Properties target, Configuration vars)
   {
-    ScriptEngine engine = new ScriptEngineManager().getEngineByName("javascript");
-
-    Pattern substitutionPattern = Pattern.compile("\\$\\{(.+?)\\}");
+    Pattern substitionPattern = Pattern.compile("\\$\\{(.+?)\\}");
     Pattern evalPattern = Pattern.compile("\\{% (.+?) %\\}");
 
+    org.mozilla.javascript.Context context = org.mozilla.javascript.Context.enter();
+    context.setOptimizationLevel(-1);
+    Scriptable scope = context.initStandardObjects();
     try {
-      engine.eval("var _prop = {}");
+      context.evaluateString(scope, "var _prop = {}", "EvalLaunchProperties", 0, null);
       for (Map.Entry<String, String> entry : vars) {
-        String evalString = String.format("_prop[\"%s\"] = \"%s\"", StringEscapeUtils.escapeJava(entry.getKey()), StringEscapeUtils.escapeJava(entry.getValue()));
-        engine.eval(evalString);
-      }
-    } catch (ScriptException ex) {
-      LOG.warn("Javascript error: {}", ex.getMessage());
-    }
-
-    for (Map.Entry<Object, Object> entry : target.entrySet()) {
-      String value = entry.getValue().toString();
-
-      Matcher matcher = substitutionPattern.matcher(value);
-      if (matcher.find()) {
-        StringBuilder newValue = new StringBuilder();
-        int cursor = 0;
-        do {
-          newValue.append(value.substring(cursor, matcher.start()));
-          String subst = vars.get(matcher.group(1));
-          if (subst != null) {
-            newValue.append(subst);
-          }
-          cursor = matcher.end();
-        } while (matcher.find());
-        newValue.append(value.substring(cursor));
-        target.put(entry.getKey(), newValue.toString());
+        LOG.info("Evaluating: {}", "_prop[\"" + entry.getKey() + "\"] = " + entry.getValue());
+        context.evaluateString(scope, "_prop[\"" + entry.getKey() + "\"] = \"" + StringEscapeUtils.escapeJava(entry.getValue()) + "\"", "EvalLaunchProperties", 0, null);
       }
 
-      matcher = evalPattern.matcher(value);
-      if (matcher.find()) {
-        StringBuilder newValue = new StringBuilder();
-        int cursor = 0;
-        do {
-          newValue.append(value.substring(cursor, matcher.start()));
-          try {
-            Object result = engine.eval(matcher.group(1));
-            String eval = result.toString();
+      for (Map.Entry<Object, Object> entry : target.entrySet()) {
+        String value = entry.getValue().toString();
 
+        Matcher matcher = substitionPattern.matcher(value);
+        if (matcher.find()) {
+          StringBuilder newValue = new StringBuilder();
+          int cursor = 0;
+          do {
+            newValue.append(value.substring(cursor, matcher.start()));
+            String subst = vars.get(matcher.group(1));
+            if (subst != null) {
+              newValue.append(subst);
+            }
+            cursor = matcher.end();
+          } while (matcher.find());
+          newValue.append(value.substring(cursor));
+          target.put(entry.getKey(), newValue.toString());
+        }
+
+        matcher = evalPattern.matcher(value);
+        if (matcher.find()) {
+          StringBuilder newValue = new StringBuilder();
+          int cursor = 0;
+          do {
+            newValue.append(value.substring(cursor, matcher.start()));
+            String eval = context.evaluateString(scope, matcher.group(1), "EvalLaunchProperties", 0, null).toString();
             if (eval != null) {
               newValue.append(eval);
             }
-          } catch (ScriptException ex) {
-            LOG.warn("JavaScript exception {}", ex.getMessage());
-          }
-          cursor = matcher.end();
-        } while (matcher.find());
-        newValue.append(value.substring(cursor));
-        target.put(entry.getKey(), newValue.toString());
+            cursor = matcher.end();
+          } while (matcher.find());
+          newValue.append(value.substring(cursor));
+          target.put(entry.getKey(), newValue.toString());
+        }
       }
     }
-  }
-
-  public static void evalConfiguration(Configuration conf)
-  {
-    Properties props = new Properties();
-    for (Map.Entry entry : conf) {
-      props.put(entry.getKey(), entry.getValue());
-    }
-    evalProperties(props, conf);
-    for (Map.Entry<Object, Object> entry : props.entrySet()) {
-      conf.set((String)entry.getKey(), (String)entry.getValue());
+    finally {
+      org.mozilla.javascript.Context.exit();
     }
   }
 
@@ -751,66 +715,6 @@ public class StramClientUtils
       }
     }
     return null;
-  }
-
-  public static InetSocketAddress getRMWebAddress(Configuration conf, String rmId)
-  {
-    boolean sslEnabled = conf.getBoolean(CommonConfigurationKeysPublic.HADOOP_SSL_ENABLED_KEY, CommonConfigurationKeysPublic.HADOOP_SSL_ENABLED_DEFAULT);
-    return getRMWebAddress(conf, sslEnabled, rmId);
-  }
-
-  public static InetSocketAddress getRMWebAddress(Configuration conf, boolean sslEnabled, String rmId)
-  {
-    rmId = (rmId == null) ? "" : ("." + rmId);
-    InetSocketAddress address;
-    if (sslEnabled) {
-      address = conf.getSocketAddr(YarnConfiguration.RM_WEBAPP_HTTPS_ADDRESS + rmId, YarnConfiguration.DEFAULT_RM_WEBAPP_HTTPS_ADDRESS, YarnConfiguration.DEFAULT_RM_WEBAPP_HTTPS_PORT);
-    } else {
-      address = conf.getSocketAddr(YarnConfiguration.RM_WEBAPP_ADDRESS + rmId, YarnConfiguration.DEFAULT_RM_WEBAPP_ADDRESS, YarnConfiguration.DEFAULT_RM_WEBAPP_PORT);
-    }
-    LOG.info("rm webapp address setting {}", address);
-    LOG.debug("rm setting sources {}", conf.getPropertySources(YarnConfiguration.RM_WEBAPP_ADDRESS));
-    InetSocketAddress resolvedSocketAddress = NetUtils.getConnectAddress(address);
-    InetAddress resolved = resolvedSocketAddress.getAddress();
-    if (resolved == null || resolved.isAnyLocalAddress() || resolved.isLoopbackAddress()) {
-      try {
-        resolvedSocketAddress = InetSocketAddress.createUnresolved(InetAddress.getLocalHost().getCanonicalHostName(), address.getPort());
-      } catch (UnknownHostException e) {
-        //Ignore and fallback.
-      }
-    }
-    return resolvedSocketAddress;
-  }
-
-  public static String getSocketConnectString(InetSocketAddress socketAddress)
-  {
-    String host;
-    InetAddress address = socketAddress.getAddress();
-    if (address == null) {
-      host = socketAddress.getHostString();
-    } else if (address.isAnyLocalAddress() || address.isLoopbackAddress()) {
-      host = address.getCanonicalHostName();
-    } else {
-      host = address.getHostName();
-    }
-    return host + ":" + socketAddress.getPort();
-  }
-
-  public static List<InetSocketAddress> getRMAddresses(Configuration conf)
-  {
-
-    List<InetSocketAddress> rmAddresses = new ArrayList<>();
-    if (ConfigUtils.isRMHAEnabled(conf)) {
-      // HA is enabled get all
-      for (String rmId : ConfigUtils.getRMHAIds(conf)) {
-        InetSocketAddress socketAddress = getRMWebAddress(conf, rmId);
-        rmAddresses.add(socketAddress);
-      }
-    } else {
-      InetSocketAddress socketAddress = getRMWebAddress(conf, null);
-      rmAddresses.add(socketAddress);
-    }
-    return rmAddresses;
   }
 
 }

@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram;
 
@@ -24,12 +21,10 @@ import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+
+import com.google.common.base.Objects;
+import com.google.common.collect.Lists;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,29 +35,14 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.FileUtil;
-import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.*;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.JarFinder;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
-import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
-import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
-import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
-import org.apache.hadoop.yarn.api.records.LocalResource;
-import org.apache.hadoop.yarn.api.records.LocalResourceType;
-import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
-import org.apache.hadoop.yarn.api.records.Priority;
-import org.apache.hadoop.yarn.api.records.QueueACL;
-import org.apache.hadoop.yarn.api.records.QueueUserACLInfo;
-import org.apache.hadoop.yarn.api.records.Resource;
-import org.apache.hadoop.yarn.api.records.YarnClusterMetrics;
+import org.apache.hadoop.yarn.api.records.*;
 import org.apache.hadoop.yarn.client.api.YarnClient;
 import org.apache.hadoop.yarn.client.api.YarnClientApplication;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -71,13 +51,10 @@ import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.log4j.DTLoggerFactory;
 
-import com.google.common.base.Objects;
-import com.google.common.collect.Lists;
-
 import com.datatorrent.api.Context.OperatorContext;
-import com.datatorrent.api.StorageAgent;
-import com.datatorrent.common.util.AsyncFSStorageAgent;
+
 import com.datatorrent.common.util.BasicContainerOptConfigurator;
+import com.datatorrent.common.util.FSStorageAgent;
 import com.datatorrent.stram.client.StramClientUtils;
 import com.datatorrent.stram.client.StramClientUtils.ClientRMHelper;
 import com.datatorrent.stram.engine.StreamingContainer;
@@ -142,9 +119,9 @@ public class StramClient
       org.apache.http.message.BasicHeaderValueParser.class,
       com.esotericsoftware.minlog.Log.class,
       org.apache.xbean.asm5.tree.ClassNode.class,
+      org.mozilla.javascript.Scriptable.class,
       // The jersey client inclusion is only for Hadoop-2.2 and should be removed when we upgrade our Hadoop
       // dependency version since Hadoop-2.3 onwards has jersey client bundled
-      com.sun.jersey.api.client.ClientHandler.class,
       com.sun.jersey.client.apache4.ApacheHttpClient4Handler.class
   };
 
@@ -372,7 +349,7 @@ public class StramClient
 
     // Dump out information about cluster capability as seen by the resource manager
     int maxMem = newApp.getNewApplicationResponse().getMaximumResourceCapability().getMemory();
-    LOG.info("Max mem capability of resources in this cluster " + maxMem);
+    LOG.info("Max mem capabililty of resources in this cluster " + maxMem);
     int amMemory = dag.getMasterMemoryMB();
     if (amMemory > maxMem) {
       LOG.info("AM memory specified above max threshold of cluster. Using max value."
@@ -476,17 +453,11 @@ public class StramClient
       }
 
       dag.getAttributes().put(LogicalPlan.APPLICATION_PATH, appPath.toString());
-      StorageAgent agent = dag.getAttributes().get(OperatorContext.STORAGE_AGENT);
-      if (agent != null && agent instanceof StorageAgent.ApplicationAwareStorageAgent) {
-        ((StorageAgent.ApplicationAwareStorageAgent)agent).setApplicationAttributes(dag.getAttributes());
-      }
-      
       if (dag.getAttributes().get(OperatorContext.STORAGE_AGENT) == null) { /* which would be the most likely case */
         Path checkpointPath = new Path(appPath, LogicalPlan.SUBDIR_CHECKPOINTS);
         // use conf client side to pickup any proxy settings from dt-site.xml
-        dag.setAttribute(OperatorContext.STORAGE_AGENT, new AsyncFSStorageAgent(checkpointPath.toString(), conf));
+        dag.setAttribute(OperatorContext.STORAGE_AGENT, new FSStorageAgent(checkpointPath.toString(), conf));
       }
-
       if(dag.getAttributes().get(LogicalPlan.CONTAINER_OPTS_CONFIGURATOR) == null){
         dag.setAttribute(LogicalPlan.CONTAINER_OPTS_CONFIGURATOR,new BasicContainerOptConfigurator());
       }
@@ -522,7 +493,15 @@ public class StramClient
       outStream = fs.create(launchConfigDst, true);
       conf.writeXml(outStream);
       outStream.close();
-      LaunchContainerRunnable.addFileToLocalResources(LogicalPlan.SER_FILE_NAME, fs.getFileStatus(cfgDst), LocalResourceType.FILE, localResources);
+
+      FileStatus topologyFileStatus = fs.getFileStatus(cfgDst);
+      LocalResource topologyRsrc = Records.newRecord(LocalResource.class);
+      topologyRsrc.setType(LocalResourceType.FILE);
+      topologyRsrc.setVisibility(LocalResourceVisibility.APPLICATION);
+      topologyRsrc.setResource(ConverterUtils.getYarnUrlFromURI(cfgDst.toUri()));
+      topologyRsrc.setTimestamp(topologyFileStatus.getModificationTime());
+      topologyRsrc.setSize(topologyFileStatus.getLen());
+      localResources.put(LogicalPlan.SER_FILE_NAME, topologyRsrc);
 
       // Set local resource info into app master container launch context
       amContainer.setLocalResources(localResources);
@@ -571,9 +550,6 @@ public class StramClient
       if (dag.getMasterJVMOptions() != null) {
         vargs.add(dag.getMasterJVMOptions());
       }
-      Path tmpDir = new Path(ApplicationConstants.Environment.PWD.$(),
-        YarnConfiguration.DEFAULT_CONTAINER_TEMP_DIR);
-      vargs.add("-Djava.io.tmpdir=" + tmpDir);
       vargs.add("-Xmx" + (amMemory * 3 / 4) + "m");
       vargs.add("-XX:+HeapDumpOnOutOfMemoryError");
       vargs.add("-XX:HeapDumpPath=/tmp/dt-heap-" + appId.getId() + ".bin");

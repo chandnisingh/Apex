@@ -1,27 +1,23 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.plan.physical;
 
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.*;
-import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,9 +40,6 @@ import com.datatorrent.api.Partitioner.Partition;
 import com.datatorrent.api.Partitioner.PartitionKeys;
 import com.datatorrent.api.StatsListener.OperatorRequest;
 import com.datatorrent.api.annotation.Stateless;
-
-import com.datatorrent.common.util.AsyncFSStorageAgent;
-import com.datatorrent.netlet.util.DTThrowable;
 import com.datatorrent.stram.Journal.Recoverable;
 import com.datatorrent.stram.api.Checkpoint;
 import com.datatorrent.stram.api.StramEvent;
@@ -56,7 +49,6 @@ import com.datatorrent.stram.plan.logical.LogicalPlan.InputPortMeta;
 import com.datatorrent.stram.plan.logical.LogicalPlan.OperatorMeta;
 import com.datatorrent.stram.plan.logical.LogicalPlan.OutputPortMeta;
 import com.datatorrent.stram.plan.logical.LogicalPlan.StreamMeta;
-import com.datatorrent.stram.plan.logical.StreamCodecWrapperForPersistance;
 import com.datatorrent.stram.plan.physical.PTOperator.HostOperatorSet;
 import com.datatorrent.stram.plan.physical.PTOperator.PTInput;
 import com.datatorrent.stram.plan.physical.PTOperator.PTOutput;
@@ -206,11 +198,10 @@ public class PhysicalPlan implements Serializable
       p.statsListeners = this.statsHandlers;
     }
 
-    /**
-     * Return all partitions and unifiers, except MxN unifiers
-     * @return
-     */
     private Collection<PTOperator> getAllOperators() {
+//      if (partitions.size() == 1) {
+//        return Collections.singletonList(partitions.get(0));
+//      }
       Collection<PTOperator> c = new ArrayList<PTOperator>(partitions.size() + 1);
       c.addAll(partitions);
       for (StreamMapping ug : outputStreams.values()) {
@@ -311,9 +302,6 @@ public class PhysicalPlan implements Serializable
 
     Stack<OperatorMeta> pendingNodes = new Stack<OperatorMeta>();
 
-    // Add logging operators for streams if not added already
-    updatePersistOperatorStreamCodec(dag);
-
     for (OperatorMeta n : dag.getAllOperators()) {
       pendingNodes.push(n);
     }
@@ -328,11 +316,8 @@ public class PhysicalPlan implements Serializable
 
       boolean upstreamDeployed = true;
 
-      for (Map.Entry<InputPortMeta, StreamMeta> entry : n.getInputStreams().entrySet()) {
-        StreamMeta s = entry.getValue();
-        boolean delay = entry.getKey().getValue(LogicalPlan.IS_CONNECTED_TO_DELAY_OPERATOR);
-        // skip delay sources since it's going to be handled as downstream
-        if (!delay && s.getSource() != null && !this.logicalToPTOperator.containsKey(s.getSource().getOperatorMeta())) {
+      for (StreamMeta s : n.getInputStreams().values()) {
+        if (s.getSource() != null && !this.logicalToPTOperator.containsKey(s.getSource().getOperatorMeta())) {
           pendingNodes.push(n);
           pendingNodes.push(s.getSource().getOperatorMeta());
           upstreamDeployed = false;
@@ -344,8 +329,6 @@ public class PhysicalPlan implements Serializable
         addLogicalOperator(n);
       }
     }
-
-    updatePartitionsInfoForPersistOperator(dag);
 
     // assign operators to containers
     int groupCount = 0;
@@ -384,107 +367,6 @@ public class PhysicalPlan implements Serializable
     this.newOpers.clear();
     this.deployOpers.clear();
     this.undeployOpers.clear();
-  }
-
-  private void updatePartitionsInfoForPersistOperator(LogicalPlan dag)
-  {
-    // Add Partition mask and partition keys of Sinks to persist to Wrapper
-    // StreamCodec for persist operator
-    try {
-      for (OperatorMeta n : dag.getAllOperators()) {
-        for (StreamMeta s : n.getOutputStreams().values()) {
-          if (s.getPersistOperator() != null) {
-            InputPortMeta persistInputPort = s.getPersistOperatorInputPort();
-            StreamCodecWrapperForPersistance<?> persistCodec = (StreamCodecWrapperForPersistance<?>) persistInputPort.getAttributes().get(PortContext.STREAM_CODEC);
-            if (persistCodec == null)
-              continue;
-            // Logging is enabled for the stream
-            for (InputPortMeta portMeta : s.getSinksToPersist()) {
-              updatePersistOperatorWithSinkPartitions(persistInputPort, s.getPersistOperator(), persistCodec, portMeta);
-            }
-          }
-
-          // Check partitioning for persist operators per sink too
-          for (Entry<InputPortMeta, InputPortMeta> entry : s.sinkSpecificPersistInputPortMap.entrySet()) {
-            InputPortMeta persistInputPort = entry.getValue();
-            StreamCodec<?> codec = persistInputPort.getAttributes().get(PortContext.STREAM_CODEC);
-            if (codec != null) {
-              if (codec instanceof StreamCodecWrapperForPersistance) {
-                StreamCodecWrapperForPersistance<?> persistCodec = (StreamCodecWrapperForPersistance<?>) codec;
-                updatePersistOperatorWithSinkPartitions(persistInputPort, s.sinkSpecificPersistOperatorMap.get(entry.getKey()), persistCodec, entry.getKey());
-              }
-            }
-          }
-        }
-      }
-    } catch (Exception e) {
-      DTThrowable.wrapIfChecked(e);
-    }
-  }
-
-  private void updatePersistOperatorWithSinkPartitions(InputPortMeta persistInputPort, OperatorMeta persistOperatorMeta, StreamCodecWrapperForPersistance<?> persistCodec, InputPortMeta sinkPortMeta)
-  {
-    Collection<PTOperator> ptOperators = getOperators(sinkPortMeta.getOperatorWrapper());
-    Collection<PartitionKeys> partitionKeysList = new ArrayList<PartitionKeys>();
-    for (PTOperator p : ptOperators) {
-      PartitionKeys keys = p.partitionKeys.get(sinkPortMeta);
-      partitionKeysList.add(keys);
-    }
-
-    persistCodec.inputPortToPartitionMap.put(sinkPortMeta, partitionKeysList);
-  }
-
-  private void updatePersistOperatorStreamCodec(LogicalPlan dag)
-  {
-    HashMap<StreamMeta, StreamCodec<?>> streamMetaToCodecMap = new HashMap<StreamMeta, StreamCodec<?>>();
-    try {
-      for (OperatorMeta n : dag.getAllOperators()) {
-        for (StreamMeta s : n.getOutputStreams().values()) {
-          if (s.getPersistOperator() != null) {
-            Map<InputPortMeta, StreamCodec<?>> inputStreamCodecs = new HashMap<>();
-            // Logging is enabled for the stream
-            for (InputPortMeta portMeta : s.getSinksToPersist()) {
-              InputPort<?> port = portMeta.getPortObject();
-              StreamCodec<?> inputStreamCodec = (portMeta.getValue(PortContext.STREAM_CODEC) != null) ? portMeta.getValue(PortContext.STREAM_CODEC) : port.getStreamCodec();
-              if (inputStreamCodec != null) {
-                boolean alreadyAdded = false;
-
-                for (StreamCodec<?> codec : inputStreamCodecs.values()) {
-                  if (inputStreamCodec.equals(codec)) {
-                    alreadyAdded = true;
-                    break;
-                  }
-                }
-                if (!alreadyAdded) {
-                  inputStreamCodecs.put(portMeta, inputStreamCodec);
-                }
-              }
-            }
-
-            if (inputStreamCodecs.isEmpty()) {
-              // Stream codec not specified
-              // So everything out of Source should be captured without any
-              // StreamCodec
-              // Do nothing
-            } else {
-              // Create Wrapper codec for Stream persistence using all unique
-              // stream codecs
-              // Logger should write merged or union of all input stream codecs
-              StreamCodec<?> specifiedCodecForLogger = (s.getPersistOperatorInputPort().getValue(PortContext.STREAM_CODEC) != null) ? s.getPersistOperatorInputPort().getValue(PortContext.STREAM_CODEC) : s.getPersistOperatorInputPort().getPortObject().getStreamCodec();
-              @SuppressWarnings({ "unchecked", "rawtypes" })
-              StreamCodecWrapperForPersistance<Object> codec = new StreamCodecWrapperForPersistance(inputStreamCodecs, specifiedCodecForLogger);
-              streamMetaToCodecMap.put(s, codec);
-            }
-          }
-        }
-      }
-
-      for (java.util.Map.Entry<StreamMeta, StreamCodec<?>> entry : streamMetaToCodecMap.entrySet()) {
-        dag.setInputPortAttribute(entry.getKey().getPersistOperatorInputPort().getPortObject(), PortContext.STREAM_CODEC, entry.getValue());
-      }
-    } catch (Exception e) {
-      DTThrowable.wrapIfChecked(e);
-    }
   }
 
   private void setContainer(PTOperator pOperator, PTContainer container) {
@@ -896,8 +778,7 @@ public class PhysicalPlan implements Serializable
     partitioner.partitioned(mainPC.operatorIdToPartition);
   }
 
-  private void updateStreamMappings(PMapping m)
-  {
+  private void updateStreamMappings(PMapping m) {
     for (Map.Entry<OutputPortMeta, StreamMeta> opm : m.logicalOperator.getOutputStreams().entrySet()) {
       StreamMapping ug = m.outputStreams.get(opm.getKey());
       if (ug == null) {
@@ -906,14 +787,12 @@ public class PhysicalPlan implements Serializable
       }
       LOG.debug("update stream mapping for {} {}", opm.getKey().getOperatorMeta(), opm.getKey().getPortName());
       ug.setSources(m.partitions);
+      //ug.redoMapping();
     }
 
     for (Map.Entry<InputPortMeta, StreamMeta> ipm : m.logicalOperator.getInputStreams().entrySet()) {
       PMapping sourceMapping = this.logicalToPTOperator.get(ipm.getValue().getSource().getOperatorMeta());
-      if (ipm.getValue().getSource().getOperatorMeta().getOperator() instanceof Operator.DelayOperator) {
-        // skip if the source is a DelayOperator
-        continue;
-      }
+
       if (ipm.getKey().getValue(PortContext.PARTITION_PARALLEL)) {
         if (sourceMapping.partitions.size() < m.partitions.size()) {
           throw new AssertionError("Number of partitions don't match in parallel mapping " + sourceMapping.logicalOperator.getName() + " -> " + m.logicalOperator.getName() + ", " + sourceMapping.partitions.size() + " -> " + m.partitions.size());
@@ -948,11 +827,11 @@ public class PhysicalPlan implements Serializable
                 PTOperator slidingUnifier = StreamMapping.createSlidingUnifier(sourceOut.logicalStream, this,
                   sourceOM.getValue(Context.OperatorContext.APPLICATION_WINDOW_COUNT), slidingWindowCount);
                 StreamMapping.addInput(slidingUnifier, sourceOut, null);
-                input = new PTInput(ipm.getKey().getPortName(), ipm.getValue(), oper, null, slidingUnifier.outputs.get(0), ipm.getKey().getValue(LogicalPlan.IS_CONNECTED_TO_DELAY_OPERATOR));
+                input = new PTInput(ipm.getKey().getPortName(), ipm.getValue(), oper, null, slidingUnifier.outputs.get(0));
                 sourceMapping.outputStreams.get(ipm.getValue().getSource()).slidingUnifiers.add(slidingUnifier);
               }
               else {
-                input = new PTInput(ipm.getKey().getPortName(), ipm.getValue(), oper, null, sourceOut, ipm.getKey().getValue(LogicalPlan.IS_CONNECTED_TO_DELAY_OPERATOR));
+                input = new PTInput(ipm.getKey().getPortName(), ipm.getValue(), oper, null, sourceOut);
               }
               oper.inputs.add(input);
             }
@@ -966,6 +845,7 @@ public class PhysicalPlan implements Serializable
         }
         LOG.debug("update upstream stream mapping for {} {}", sourceMapping.logicalOperator, ipm.getValue().getSource().getPortName());
         ug.setSources(sourceMapping.partitions);
+        //ug.redoMapping();
       }
     }
 
@@ -975,7 +855,7 @@ public class PhysicalPlan implements Serializable
     Set<PTContainer> newContainers = Sets.newHashSet();
     Set<PTContainer> releaseContainers = Sets.newHashSet();
     assignContainers(newContainers, releaseContainers);
-    updatePartitionsInfoForPersistOperator(this.dag);
+
     this.undeployOpers.removeAll(newOpers.keySet());
     //make sure all the new operators are included in deploy operator list
     this.deployOpers.addAll(this.newOpers.keySet());
@@ -1061,14 +941,7 @@ public class PhysicalPlan implements Serializable
     try {
       LOG.debug("Writing activation checkpoint {} {} {}", checkpoint, oper, oo);
       long windowId = oper.isOperatorStateLess() ? Stateless.WINDOW_ID : checkpoint.windowId;
-      StorageAgent agent = oper.operatorMeta.getValue(OperatorContext.STORAGE_AGENT);
-      agent.save(oo, oper.id, windowId);
-      if (agent instanceof AsyncFSStorageAgent) {
-        AsyncFSStorageAgent asyncFSStorageAgent = (AsyncFSStorageAgent)agent;
-        if(!asyncFSStorageAgent.isSyncCheckpoint()) {
-          asyncFSStorageAgent.copyToHDFS(oper.id, windowId);
-        }
-      }
+      oper.operatorMeta.getValue(OperatorContext.STORAGE_AGENT).save(oo, oper.id, windowId);
     } catch (IOException e) {
       // inconsistent state, no recovery option, requires shutdown
       throw new IllegalStateException("Failed to write operator state after partition change " + oper, e);
@@ -1111,35 +984,18 @@ public class PhysicalPlan implements Serializable
   }
 
   /**
-   * Remove a partition that was reported as terminated by the execution layer.
-   * Recursively removes all downstream operators with no remaining input.
+   * Remove a partition that was reported as idle by the execution layer.
+   * Since the end stream tuple is propagated to the downstream operators,
+   * there is no need to undeploy/redeploy them as part of this operation.
    * @param p
    */
-  public void removeTerminatedPartition(PTOperator p)
+  public void removeIdlePartition(PTOperator p)
   {
-    // keep track of downstream operators for cascading remove
-    Set<PTOperator> downstreamOpers = new HashSet<>(p.outputs.size());
-    for (PTOutput out : p.outputs) {
-      for (PTInput sinkIn : out.sinks) {
-        downstreamOpers.add(sinkIn.target);
-      }
-    }
     PMapping currentMapping = this.logicalToPTOperator.get(p.operatorMeta);
-    if (currentMapping != null) {
-      List<PTOperator> copyPartitions = Lists.newArrayList(currentMapping.partitions);
-      copyPartitions.remove(p);
-      removePartition(p, currentMapping);
-      currentMapping.partitions = copyPartitions;
-    } else {
-      // remove the operator
-      removePTOperator(p);
-    }
-    // remove orphaned downstream operators
-    for (PTOperator dop : downstreamOpers) {
-      if (dop.inputs.isEmpty()) {
-        removeTerminatedPartition(dop);
-      }
-    }
+    List<PTOperator> copyPartitions = Lists.newArrayList(currentMapping.partitions);
+    copyPartitions.remove(p);
+    removePartition(p, currentMapping);
+    currentMapping.partitions = copyPartitions;
     deployChanges();
   }
 
@@ -1150,8 +1006,8 @@ public class PhysicalPlan implements Serializable
    * @param oper
    * @return
    */
-  private void removePartition(PTOperator oper, PMapping operatorMapping)
-  {
+  private void removePartition(PTOperator oper, PMapping operatorMapping) {
+
     // remove any parallel partition
     for (PTOutput out : oper.outputs) {
       // copy list as it is modified by recursive remove
@@ -1275,8 +1131,7 @@ public class PhysicalPlan implements Serializable
     return inputPortList;
   }
 
-  void removePTOperator(PTOperator oper)
-  {
+  void removePTOperator(PTOperator oper) {
     LOG.debug("Removing operator " + oper);
 
     // per partition merge operators
@@ -1409,33 +1264,7 @@ public class PhysicalPlan implements Serializable
         getDeps(operator, visited);
       }
     }
-    visited.addAll(getDependentPersistOperators(operators));
     return visited;
-  }
-
-  private Set<PTOperator> getDependentPersistOperators(Collection<PTOperator> operators)
-  {
-    Set<PTOperator> persistOperators = new LinkedHashSet<PTOperator>();
-    if (operators != null) {
-      for (PTOperator operator : operators) {
-        for (PTInput in : operator.inputs) {
-          if (in.logicalStream.getPersistOperator() != null) {
-            for (InputPortMeta inputPort : in.logicalStream.getSinksToPersist()) {
-              if (inputPort.getOperatorWrapper().equals(operator.operatorMeta)) {
-                // Redeploy the stream wide persist operator only if the current sink is being persisted
-                persistOperators.addAll(getOperators(in.logicalStream.getPersistOperator()));
-                break;
-              }
-            }
-          }
-          for (Entry<InputPortMeta, OperatorMeta> entry : in.logicalStream.sinkSpecificPersistOperatorMap.entrySet()) {
-            // Redeploy sink specific persist operators
-            persistOperators.addAll(getOperators(entry.getValue()));
-          }
-        }
-      }
-    }
-    return persistOperators;
   }
 
   /**
@@ -1451,9 +1280,6 @@ public class PhysicalPlan implements Serializable
     PMapping upstreamPartitioned = null;
 
     for (Map.Entry<LogicalPlan.InputPortMeta, StreamMeta> e : om.getInputStreams().entrySet()) {
-      if (e.getValue().getSource().getOperatorMeta().getOperator() instanceof Operator.DelayOperator) {
-        continue;
-      }
       PMapping m = logicalToPTOperator.get(e.getValue().getSource().getOperatorMeta());
       if (e.getKey().getValue(PortContext.PARTITION_PARALLEL).equals(true)) {
         // operator partitioned with upstream

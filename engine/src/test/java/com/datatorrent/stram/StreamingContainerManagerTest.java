@@ -1,41 +1,37 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram;
 
+import java.io.File;
 import java.io.IOException;
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.io.DataInputByteBuffer;
 import org.apache.hadoop.io.DataOutputByteBuffer;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
-import com.datatorrent.api.AutoMetric;
 import com.datatorrent.api.Context.OperatorContext;
 import com.datatorrent.api.Context.PortContext;
 import com.datatorrent.api.DAG.Locality;
@@ -43,11 +39,9 @@ import com.datatorrent.api.Stats.OperatorStats;
 import com.datatorrent.api.Stats.OperatorStats.PortStats;
 import com.datatorrent.api.StatsListener;
 import com.datatorrent.api.annotation.Stateless;
-import com.datatorrent.common.metric.AutoMetricBuiltInTransport;
+
 import com.datatorrent.common.partitioner.StatelessPartitioner;
-import com.datatorrent.common.util.AsyncFSStorageAgent;
 import com.datatorrent.common.util.FSStorageAgent;
-import com.datatorrent.stram.MockContainer.MockOperatorStats;
 import com.datatorrent.stram.StreamingContainerAgent.ContainerStartRequest;
 import com.datatorrent.stram.StreamingContainerManager.ContainerResource;
 import com.datatorrent.stram.api.AppDataSource;
@@ -60,10 +54,14 @@ import com.datatorrent.stram.api.StreamingContainerUmbilicalProtocol.ContainerHe
 import com.datatorrent.stram.api.StreamingContainerUmbilicalProtocol.ContainerHeartbeatResponse;
 import com.datatorrent.stram.api.StreamingContainerUmbilicalProtocol.ContainerStats;
 import com.datatorrent.stram.api.StreamingContainerUmbilicalProtocol.OperatorHeartbeat;
-import com.datatorrent.stram.api.StreamingContainerUmbilicalProtocol.OperatorHeartbeat.DeployState;
 import com.datatorrent.stram.appdata.AppDataPushAgent;
 import com.datatorrent.stram.codec.DefaultStatefulStreamCodec;
-import com.datatorrent.stram.engine.*;
+import com.datatorrent.stram.engine.DefaultUnifier;
+import com.datatorrent.stram.engine.GenericTestOperator;
+import com.datatorrent.stram.engine.TestAppDataQueryOperator;
+import com.datatorrent.stram.engine.TestAppDataResultOperator;
+import com.datatorrent.stram.engine.TestAppDataSourceOperator;
+import com.datatorrent.stram.engine.TestGeneratorInputOperator;
 import com.datatorrent.stram.plan.TestPlanContext;
 import com.datatorrent.stram.plan.logical.LogicalPlan;
 import com.datatorrent.stram.plan.logical.LogicalPlan.OperatorMeta;
@@ -77,27 +75,16 @@ import com.datatorrent.stram.support.StramTestSupport.EmbeddedWebSocketServer;
 import com.datatorrent.stram.support.StramTestSupport.MemoryStorageAgent;
 import com.datatorrent.stram.support.StramTestSupport.TestMeta;
 import com.datatorrent.stram.tuple.Tuple;
-
 import org.apache.commons.lang.StringUtils;
+import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
-import org.eclipse.jetty.websocket.WebSocket;
+import org.eclipse.jetty.websocket.api.WebSocketAdapter;
 
-public class StreamingContainerManagerTest
-{
-  @Rule
-  public TestMeta testMeta = new TestMeta();
-
-  private LogicalPlan dag;
-
-  @Before
-  public void setup()
-  {
-    dag = StramTestSupport.createDAG(testMeta);
-  }
+public class StreamingContainerManagerTest {
+  @Rule public TestMeta testMeta = new TestMeta();
 
   @Test
-  public void testDeployInfoSerialization() throws Exception
-  {
+  public void testDeployInfoSerialization() throws Exception {
     OperatorDeployInfo ndi = new OperatorDeployInfo();
     ndi.name = "node1";
     ndi.type = OperatorDeployInfo.OperatorType.GENERIC;
@@ -147,8 +134,11 @@ public class StreamingContainerManagerTest
   }
 
   @Test
-  public void testGenerateDeployInfo()
-  {
+  public void testGenerateDeployInfo() {
+
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(com.datatorrent.api.Context.DAGContext.APPLICATION_PATH, testMeta.dir);
+
     TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
     GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
     GenericTestOperator o3 = dag.addOperator("o3", GenericTestOperator.class);
@@ -201,8 +191,8 @@ public class StreamingContainerManagerTest
     Assert.assertEquals("number operators assigned to container", 3, c2.size());
     OperatorDeployInfo o2DI = getNodeDeployInfo(c2, dag.getMeta(o2));
     OperatorDeployInfo o3DI = getNodeDeployInfo(c2, dag.getMeta(o3));
-    Assert.assertNotNull(dag.getMeta(o2) + " assigned to " + sca2.container.getExternalId(), o2DI);
-    Assert.assertNotNull(dag.getMeta(o3) + " assigned to " + sca2.container.getExternalId(), o3DI);
+    Assert.assertNotNull(o2.getName() + " assigned to " + sca2.container.getExternalId(), o2DI);
+    Assert.assertNotNull(o3.getName() + " assigned to " + sca2.container.getExternalId(), o3DI);
 
     Assert.assertTrue("The buffer server memory for container 1", 256 == sca1.getInitContext().getValue(ContainerContext.BUFFER_SERVER_MB));
     Assert.assertTrue("The buffer server memory for container 2", 0 == sca2.getInitContext().getValue(ContainerContext.BUFFER_SERVER_MB));
@@ -231,7 +221,7 @@ public class StreamingContainerManagerTest
 
     // THREAD_LOCAL o4.inport1
     OperatorDeployInfo o4DI = getNodeDeployInfo(c2, dag.getMeta(o4));
-    Assert.assertNotNull(dag.getMeta(o4) + " assigned to " + sca2.container.getExternalId(), o4DI);
+    Assert.assertNotNull(o4.getName() + " assigned to " + sca2.container.getExternalId(), o4DI);
     InputDeployInfo c2o4i1 = getInputDeployInfo(o4DI, "o3.outport1");
     Assert.assertNotNull("input from o3.outport1", c2o4i1);
     Assert.assertEquals("portName " + c2o4i1, GenericTestOperator.IPORT1, c2o4i1.portName);
@@ -246,8 +236,9 @@ public class StreamingContainerManagerTest
   }
 
   @Test
-  public void testStaticPartitioning()
-  {
+  public void testStaticPartitioning() {
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(com.datatorrent.api.Context.DAGContext.APPLICATION_PATH, testMeta.dir);
     //
     //            ,---> node2----,
     //            |              |
@@ -283,7 +274,7 @@ public class StreamingContainerManagerTest
     StreamingContainerAgent sca1 = dnm.getContainerAgent(c.getExternalId());
     List<OperatorDeployInfo> c1 = getDeployInfo(sca1);
     Assert.assertEquals("number operators assigned to container", 1, c1.size());
-    Assert.assertTrue(dag.getMeta(node2) + " assigned to " + sca1.container.getExternalId(), containsNodeContext(c1, dag.getMeta(node1)));
+    Assert.assertTrue(node2.getName() + " assigned to " + sca1.container.getExternalId(), containsNodeContext(c1, dag.getMeta(node1)));
 
     List<PTOperator> o2Partitions = plan.getOperators(dag.getMeta(node2));
     Assert.assertEquals("number partitions", TestStaticPartitioningSerDe.partitions.length, o2Partitions.size());
@@ -292,7 +283,7 @@ public class StreamingContainerManagerTest
       String containerId = o2Partitions.get(i).getContainer().getExternalId();
       List<OperatorDeployInfo> cc = getDeployInfo(dnm.getContainerAgent(containerId));
       Assert.assertEquals("number operators assigned to container", 1, cc.size());
-      Assert.assertTrue(dag.getMeta(node2) + " assigned to " + containerId, containsNodeContext(cc, dag.getMeta(node2)));
+      Assert.assertTrue(node2.getName() + " assigned to " + containerId, containsNodeContext(cc, dag.getMeta(node2)));
 
       // n1n2 in, mergeStream out
       OperatorDeployInfo ndi = cc.get(0);
@@ -350,7 +341,7 @@ public class StreamingContainerManagerTest
     Assert.assertEquals("number operators " + cmerge, 1, cmerge.size());
 
     OperatorDeployInfo node3DI = getNodeDeployInfo(cmerge,  dag.getMeta(node3));
-    Assert.assertNotNull(dag.getMeta(node3) + " assigned", node3DI);
+    Assert.assertNotNull(node3.getName() + " assigned", node3DI);
     Assert.assertEquals("inputs " + node3DI, 1, node3DI.inputs.size());
     InputDeployInfo node3In = node3DI.inputs.get(0);
     Assert.assertEquals("streamName " + node3In, n2n3.getName(), node3In.declaredStreamId);
@@ -362,6 +353,9 @@ public class StreamingContainerManagerTest
   @Test
   public void testRecoveryOrder() throws Exception
   {
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(LogicalPlan.APPLICATION_PATH, testMeta.dir);
+
     GenericTestOperator node1 = dag.addOperator("node1", GenericTestOperator.class);
     GenericTestOperator node2 = dag.addOperator("node2", GenericTestOperator.class);
     GenericTestOperator node3 = dag.addOperator("node3", GenericTestOperator.class);
@@ -410,6 +404,9 @@ public class StreamingContainerManagerTest
   @Test
   public void testRecoveryUpstreamInline() throws Exception
   {
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(LogicalPlan.APPLICATION_PATH, testMeta.dir);
+
     GenericTestOperator o1 = dag.addOperator("o1", GenericTestOperator.class);
     GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
     GenericTestOperator o3 = dag.addOperator("o3", GenericTestOperator.class);
@@ -445,9 +442,11 @@ public class StreamingContainerManagerTest
   }
 
   @Test
-  public void testCheckpointWindowIds() throws Exception
-  {
-    FSStorageAgent sa = new FSStorageAgent(testMeta.getPath(), null);
+  public void testCheckpointWindowIds() throws Exception {
+    File path =  new File(testMeta.dir);
+    FileUtils.deleteDirectory(path.getAbsoluteFile());
+
+    FSStorageAgent sa = new FSStorageAgent(path.getPath(), null);
 
     long[] windowIds = new long[]{123L, 345L, 234L};
     for (long windowId : windowIds) {
@@ -472,37 +471,15 @@ public class StreamingContainerManagerTest
   }
 
   @Test
-  public void testAsyncCheckpointWindowIds() throws Exception
-  {
-    AsyncFSStorageAgent sa = new AsyncFSStorageAgent(testMeta.getPath(), null);
-
-    long[] windowIds = new long[]{123L, 345L, 234L};
-    for (long windowId : windowIds) {
-      sa.save(windowId, 1, windowId);
-      sa.copyToHDFS(1, windowId);
-    }
-
-    Arrays.sort(windowIds);
-    long[] windowsIds = sa.getWindowIds(1);
-    Arrays.sort(windowsIds);
-    Assert.assertArrayEquals("Saved windowIds", windowIds, windowsIds);
-
-    for (long windowId : windowIds) {
-      sa.delete(1, windowId);
-    }
-    try {
-      sa.getWindowIds(1);
-      Assert.fail("There should not be any most recently saved windowId!");
-    } catch (IOException io) {
-      Assert.assertTrue("No State Saved", true);
-    }
-  }
-
-  @Test
   public void testProcessHeartbeat() throws Exception
   {
+    FileUtils.deleteDirectory(new File(testMeta.dir)); // clean any state from previous run
+
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(LogicalPlan.APPLICATION_PATH, testMeta.dir);
+
     TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
-    dag.setAttribute(o1, OperatorContext.STATS_LISTENERS, Arrays.asList(new StatsListener[]{new PartitioningTest.PartitionLoadWatch()}));
+     dag.setAttribute(o1, OperatorContext.STATS_LISTENERS, Arrays.asList(new StatsListener[]{new PartitioningTest.PartitionLoadWatch()}));
     dag.setAttribute(OperatorContext.STORAGE_AGENT, new MemoryStorageAgent());
 
     StreamingContainerManager scm = new StreamingContainerManager(dag);
@@ -645,6 +622,9 @@ public class StreamingContainerManagerTest
   @Test
   public void testValidGenericOperatorDeployInfoType()
   {
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(com.datatorrent.api.Context.DAGContext.APPLICATION_PATH, testMeta.dir);
+
     GenericTestOperator o1 = dag.addOperator("o1", GenericTestOperator.class);
     TestGeneratorInputOperator.ValidGenericOperator o2 = dag.addOperator("o2", TestGeneratorInputOperator.ValidGenericOperator.class);
 
@@ -670,6 +650,9 @@ public class StreamingContainerManagerTest
   @Test
   public void testValidInputOperatorDeployInfoType()
   {
+    LogicalPlan dag = new LogicalPlan();
+    dag.setAttribute(com.datatorrent.api.Context.DAGContext.APPLICATION_PATH, testMeta.dir);
+
     TestGeneratorInputOperator.ValidInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.ValidInputOperator.class);
     GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
 
@@ -692,104 +675,10 @@ public class StreamingContainerManagerTest
     Assert.assertEquals("type " + o1DeployInfo, OperatorDeployInfo.OperatorType.INPUT, o1DeployInfo.type);
   }
 
-  @Test
-  public void testOperatorShutdown()
-  {
-    dag.setAttribute(OperatorContext.STORAGE_AGENT, new MemoryStorageAgent());
-
-    GenericTestOperator o1 = dag.addOperator("o1", GenericTestOperator.class);
-    GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
-    GenericTestOperator o3 = dag.addOperator("o3", GenericTestOperator.class);
-
-    dag.addStream("stream1", o1.outport1, o2.inport1);
-    dag.addStream("stream2", o2.outport1, o3.inport1);
-
-    dag.setAttribute(o2, OperatorContext.PARTITIONER, new StatelessPartitioner<GenericTestOperator>(2));
-    StreamingContainerManager scm = new StreamingContainerManager(dag);
-
-    PhysicalPlan physicalPlan = scm.getPhysicalPlan();
-    Map<PTContainer, MockContainer> mockContainers = new HashMap<>();
-    for (PTContainer c : physicalPlan.getContainers()) {
-      MockContainer mc = new MockContainer(scm, c);
-      mockContainers.put(c, mc);
-    }
-
-    // deploy all containers
-    for (Map.Entry<PTContainer, MockContainer> ce : mockContainers.entrySet()) {
-      ce.getValue().deploy();
-    }
-    for (Map.Entry<PTContainer, MockContainer> ce : mockContainers.entrySet()) {
-      // skip buffer server purge in monitorHeartbeat
-      ce.getKey().bufferServerAddress = null;
-    }
-
-    PTOperator o1p1 = physicalPlan.getOperators(dag.getMeta(o1)).get(0);
-    MockContainer mc1 = mockContainers.get(o1p1.getContainer());
-    MockOperatorStats o1p1mos = mc1.stats(o1p1.getId());
-    o1p1mos.currentWindowId(1).checkpointWindowId(1).deployState(DeployState.ACTIVE);
-    mc1.sendHeartbeat();
-
-    PTOperator o2p1 = physicalPlan.getOperators(dag.getMeta(o2)).get(0);
-    MockContainer mc2 = mockContainers.get(o2p1.getContainer());
-    MockOperatorStats o2p1mos = mc2.stats(o2p1.getId());
-    o2p1mos.currentWindowId(1).checkpointWindowId(1).deployState(DeployState.ACTIVE);
-    mc2.sendHeartbeat();
-
-    Assert.assertEquals("2 partitions", 2, physicalPlan.getOperators(dag.getMeta(o2)).size());
-
-    PTOperator o2p2 = physicalPlan.getOperators(dag.getMeta(o2)).get(1);
-    MockContainer mc3 = mockContainers.get(o2p2.getContainer());
-    MockOperatorStats o2p2mos = mc3.stats(o2p2.getId());
-    o2p2mos.currentWindowId(1).checkpointWindowId(1).deployState(DeployState.ACTIVE);
-    mc3.sendHeartbeat();
-
-    PTOperator o3p1 = physicalPlan.getOperators(dag.getMeta(o3)).get(0);
-    MockContainer mc4 = mockContainers.get(o3p1.getContainer());
-    MockOperatorStats o3p1mos = mc4.stats(o3p1.getId());
-    o3p1mos.currentWindowId(1).checkpointWindowId(1).deployState(DeployState.ACTIVE);
-    mc4.sendHeartbeat();
-
-    // unifier
-    PTOperator unifier = physicalPlan.getMergeOperators(dag.getMeta(o2)).get(0);
-    MockContainer mc5 = mockContainers.get(unifier.getContainer());
-    MockOperatorStats unifierp1mos = mc5.stats(unifier.getId());
-    unifierp1mos.currentWindowId(1).checkpointWindowId(1).deployState(DeployState.ACTIVE);
-    mc5.sendHeartbeat();
-
-    o1p1mos.currentWindowId(2).deployState(DeployState.SHUTDOWN);
-    mc1.sendHeartbeat();
-    scm.monitorHeartbeat();
-    Assert.assertEquals("committedWindowId", -1, scm.getCommittedWindowId());
-    scm.monitorHeartbeat(); // committedWindowId updated in next cycle
-    Assert.assertEquals("committedWindowId", 1, scm.getCommittedWindowId());
-    scm.processEvents();
-    Assert.assertEquals("containers at committedWindowId=1", 5, physicalPlan.getContainers().size());
-
-    // checkpoint window 2
-    o1p1mos.checkpointWindowId(2);
-    mc1.sendHeartbeat();
-    scm.monitorHeartbeat();
-
-    Assert.assertEquals("committedWindowId", 1, scm.getCommittedWindowId());
-
-    o2p1mos.currentWindowId(2).checkpointWindowId(2);
-    o2p2mos.currentWindowId(2).checkpointWindowId(2);
-    o3p1mos.currentWindowId(2).checkpointWindowId(2);
-    unifierp1mos.currentWindowId(2).checkpointWindowId(2);
-    mc2.sendHeartbeat();
-    mc3.sendHeartbeat();
-    mc4.sendHeartbeat();
-    mc5.sendHeartbeat();
-    scm.monitorHeartbeat();
-
-    // Operators are shutdown when both operators reach window Id 2
-    Assert.assertEquals(0, o1p1.getContainer().getOperators().size());
-    Assert.assertEquals(0, o2p1.getContainer().getOperators().size());
-    Assert.assertEquals(0, physicalPlan.getContainers().size());
-  }
 
   private void testDownStreamPartition(Locality locality) throws Exception
   {
+    LogicalPlan dag = new LogicalPlan();
     TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
     GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
     dag.setAttribute(o2, OperatorContext.PARTITIONER, new StatelessPartitioner<GenericTestOperator>(2));
@@ -821,8 +710,8 @@ public class StreamingContainerManagerTest
   }
 
   @Test
-  public void testPhysicalPropertyUpdate() throws Exception
-  {
+  public void testPhysicalPropertyUpdate() throws Exception{
+    LogicalPlan dag = new LogicalPlan();
     TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
     GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
     dag.addStream("o1.outport", o1.outport, o2.inport1);
@@ -837,15 +726,16 @@ public class StreamingContainerManagerTest
     Future<?> future = dnmgr.getPhysicalOperatorProperty(lc.getPlanOperators(dag.getMeta(o1)).get(0).getId(), "maxTuples", 10000);
     Object object = future.get(10000, TimeUnit.MILLISECONDS);
     Assert.assertNotNull(object);
-    @SuppressWarnings("unchecked")
     Map<String, Object> propertyValue = (Map<String, Object>)object;
     Assert.assertEquals(2,propertyValue.get("maxTuples"));
     lc.shutdown();
   }
 
-  private void setupAppDataSourceLogicalPlan(Class<? extends TestAppDataQueryOperator> qClass,
+  private LogicalPlan getTestAppDataSourceLogicalPlan(Class<? extends TestAppDataQueryOperator> qClass,
           Class<? extends TestAppDataSourceOperator> dsClass, Class<? extends TestAppDataResultOperator> rClass)
   {
+    LogicalPlan dag = new LogicalPlan();
+
     TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
     TestAppDataQueryOperator q = dag.addOperator("q", qClass);
     TestAppDataResultOperator r = dag.addOperator("r", rClass);
@@ -859,9 +749,11 @@ public class StreamingContainerManagerTest
     dag.addStream("o1-to-ds", o1.outport, ds.inport1);
     dag.addStream("q-to-ds", q.outport, ds.query);
     dag.addStream("ds-to-r", ds.result, r.inport);
+
+    return dag;
   }
 
-  private void testAppDataSources(boolean appendQIDToTopic) throws Exception
+  private void testAppDataSources(LogicalPlan dag, boolean appendQIDToTopic) throws Exception
   {
     StramLocalCluster lc = new StramLocalCluster(dag);
     lc.runAsync();
@@ -885,58 +777,57 @@ public class StreamingContainerManagerTest
   @Test
   public void testGetAppDataSources1() throws Exception
   {
-    setupAppDataSourceLogicalPlan(TestAppDataQueryOperator.class, TestAppDataSourceOperator.class, TestAppDataResultOperator.ResultOperator1.class);
-    testAppDataSources(true);
+    LogicalPlan dag = getTestAppDataSourceLogicalPlan(TestAppDataQueryOperator.class, TestAppDataSourceOperator.class, TestAppDataResultOperator.ResultOperator1.class);
+    testAppDataSources(dag, true);
   }
 
   @Test
   public void testGetAppDataSources2() throws Exception
   {
-    setupAppDataSourceLogicalPlan(TestAppDataQueryOperator.class, TestAppDataSourceOperator.class, TestAppDataResultOperator.ResultOperator2.class);
-    testAppDataSources(false);
+    LogicalPlan dag = getTestAppDataSourceLogicalPlan(TestAppDataQueryOperator.class, TestAppDataSourceOperator.class, TestAppDataResultOperator.ResultOperator2.class);
+    testAppDataSources(dag, false);
   }
 
   @Test
   public void testGetAppDataSources3() throws Exception
   {
-    setupAppDataSourceLogicalPlan(TestAppDataQueryOperator.class, TestAppDataSourceOperator.class, TestAppDataResultOperator.ResultOperator3.class);
-    testAppDataSources(false);
+    LogicalPlan dag = getTestAppDataSourceLogicalPlan(TestAppDataQueryOperator.class, TestAppDataSourceOperator.class, TestAppDataResultOperator.ResultOperator3.class);
+    testAppDataSources(dag, false);
+  }
+
+  public static class TestWebSocketAdapter extends WebSocketAdapter
+  {
+
+    public static List<JSONObject> messages = new ArrayList<JSONObject>();
+
+    @Override
+    public void onWebSocketText(String data)
+    {
+      try {
+        messages.add(new JSONObject(data));
+      } catch (JSONException ex) {
+        throw new RuntimeException(ex);
+      }
+    }
   }
 
   @Test
   public void testAppDataPush() throws Exception
   {
+    int port = 12345;
     final String topic = "xyz";
-    final List<String> messages = new ArrayList<>();
-    EmbeddedWebSocketServer server = new EmbeddedWebSocketServer(0);
-    server.setWebSocket(new WebSocket.OnTextMessage()
-    {
-
-      @Override
-      public void onMessage(String data)
-      {
-        messages.add(data);
-      }
-
-      @Override
-      public void onOpen(WebSocket.Connection connection)
-      {
-      }
-
-      @Override
-      public void onClose(int closeCode, String message)
-      {
-      }
-    });
+    EmbeddedWebSocketServer server = new EmbeddedWebSocketServer(port);
+    server.setWebSocketAdapterClass(TestWebSocketAdapter.class);
     try {
       server.start();
-      int port = server.getPort();
+      LogicalPlan dag = new LogicalPlan();
       TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
       GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
       dag.addStream("o1.outport", o1.outport, o2.inport1);
-      dag.setAttribute(LogicalPlan.METRICS_TRANSPORT, new AutoMetricBuiltInTransport(topic));
+      dag.setAttribute(LogicalPlan.METRICS_TRANSPORT, "builtin:" + topic);
       dag.setAttribute(LogicalPlan.GATEWAY_CONNECT_ADDRESS, "localhost:" + port);
       StramLocalCluster lc = new StramLocalCluster(dag);
+      //lc.runAsync();
       StreamingContainerManager dnmgr = lc.dnmgr;
       StramAppContext appContext = new StramTestSupport.TestAppContext();
 
@@ -944,9 +835,9 @@ public class StreamingContainerManagerTest
       pushAgent.init();
       pushAgent.pushData();
       Thread.sleep(1000);
-      Assert.assertTrue(messages.size() > 0);
-      pushAgent.close();
-      JSONObject message = new JSONObject(messages.get(0));
+      Assert.assertTrue(TestWebSocketAdapter.messages.size() > 0);
+      JSONObject message = TestWebSocketAdapter.messages.get(0);
+      System.out.println("Got this message: " + message.toString(2));
       Assert.assertEquals(topic, message.getString("topic"));
       Assert.assertEquals("publish", message.getString("type"));
       JSONObject data = message.getJSONObject("data");
@@ -966,48 +857,5 @@ public class StreamingContainerManagerTest
     } finally {
       server.stop();
     }
-  }
-
-  public static class TestMetricTransport implements AutoMetric.Transport, Serializable
-  {
-    private String prefix;
-    private static List<String> messages = new ArrayList<>();
-
-    public TestMetricTransport(String prefix)
-    {
-      this.prefix = prefix;
-    }
-
-    @Override
-    public void push(String jsonData) throws IOException
-    {
-      messages.add(prefix + ":" + jsonData);
-    }
-
-    @Override
-    public long getSchemaResendInterval()
-    {
-      return 0;
-    }
-  }
-
-  @Test
-  public void testCustomMetricsTransport() throws Exception
-  {
-    TestGeneratorInputOperator o1 = dag.addOperator("o1", TestGeneratorInputOperator.class);
-    GenericTestOperator o2 = dag.addOperator("o2", GenericTestOperator.class);
-    dag.addStream("o1.outport", o1.outport, o2.inport1);
-    dag.setAttribute(LogicalPlan.METRICS_TRANSPORT, new TestMetricTransport("xyz"));
-    StramLocalCluster lc = new StramLocalCluster(dag);
-    StreamingContainerManager dnmgr = lc.dnmgr;
-    StramAppContext appContext = new StramTestSupport.TestAppContext();
-
-    AppDataPushAgent pushAgent = new AppDataPushAgent(dnmgr, appContext);
-    pushAgent.init();
-    pushAgent.pushData();
-    Assert.assertTrue(TestMetricTransport.messages.size() > 0);
-    pushAgent.close();
-    String msg = TestMetricTransport.messages.get(0);
-    Assert.assertTrue(msg.startsWith("xyz:"));
   }
 }

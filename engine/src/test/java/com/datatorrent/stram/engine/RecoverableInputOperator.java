@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.engine;
 
@@ -30,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import com.datatorrent.api.Context.OperatorContext;
 import com.datatorrent.api.DefaultOutputPort;
 import com.datatorrent.api.InputOperator;
+import com.datatorrent.api.Operator;
 
 import com.datatorrent.bufferserver.util.Codec;
 
@@ -39,7 +37,7 @@ import com.datatorrent.bufferserver.util.Codec;
 public class RecoverableInputOperator implements InputOperator, com.datatorrent.api.Operator.CheckpointListener
 {
   public final transient DefaultOutputPort<Long> output = new DefaultOutputPort<Long>();
-  private long checkpointedWindowId;
+  long checkpointedWindowId;
   boolean firstRun = true;
   transient boolean first;
   transient long windowId;
@@ -94,8 +92,7 @@ public class RecoverableInputOperator implements InputOperator, com.datatorrent.
   @Override
   public void setup(OperatorContext context)
   {
-    firstRun = (checkpointedWindowId == 0);
-    logger.debug("firstRun={} checkpointedWindowId={}", firstRun, Codec.getStringWindowId(checkpointedWindowId));
+    firstRun &= checkpointedWindowId == 0;
   }
 
   @Override
@@ -108,7 +105,6 @@ public class RecoverableInputOperator implements InputOperator, com.datatorrent.
   {
     if (checkpointedWindowId == 0) {
       checkpointedWindowId = windowId;
-      logger.debug("firstRun={} checkpointedWindowId={}", firstRun, Codec.getStringWindowId(checkpointedWindowId));
     }
 
     logger.debug("{} checkpointed at {}", this, Codec.getStringWindowId(windowId));
@@ -117,7 +113,8 @@ public class RecoverableInputOperator implements InputOperator, com.datatorrent.
   @Override
   public void committed(long windowId)
   {
-    logger.debug("{} committed at {} firstRun {}, checkpointedWindowId {}", this, Codec.getStringWindowId(windowId), firstRun, Codec.getStringWindowId(checkpointedWindowId));
+    logger.debug("{} committed at {}", this, Codec.getStringWindowId(windowId));
+
     if (simulateFailure && firstRun && checkpointedWindowId > 0 && windowId > checkpointedWindowId) {
       throw new RuntimeException("Failure Simulation from " + this);
     }

@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.cli;
 
@@ -89,6 +86,7 @@ import com.datatorrent.stram.plan.logical.LogicalPlan;
 import com.datatorrent.stram.plan.logical.requests.*;
 import com.datatorrent.stram.security.StramUserLogin;
 import com.datatorrent.stram.util.JSONSerializationProvider;
+import com.datatorrent.stram.util.ObjectMapperFactory;
 import com.datatorrent.stram.util.VersionInfo;
 import com.datatorrent.stram.util.WebServicesClient;
 import com.datatorrent.stram.webapp.OperatorDiscoverer;
@@ -1483,6 +1481,9 @@ public class DTCli
   private void printWelcomeMessage()
   {
     System.out.println("DT CLI " + VersionInfo.getVersion() + " " + VersionInfo.getDate() + " " + VersionInfo.getRevision());
+    if (!StramClientUtils.configComplete(conf)) {
+      System.err.println("WARNING: Configuration of DataTorrent has not been complete. Please proceed with caution and only in development environment!");
+    }
   }
 
   private void printHelp(String command, CommandSpec commandSpec, PrintStream os)
@@ -1888,10 +1889,7 @@ public class DTCli
 
           if (ap != null) {
             try {
-              if (!commandLineInfo.force) {
-                checkPlatformCompatible(ap);
-                checkConfigPackageCompatible(ap, cp);
-              }
+              checkCompatible(ap, cp);
               launchAppPackage(ap, cp, commandLineInfo, reader);
               return;
             } finally {
@@ -2783,88 +2781,95 @@ public class DTCli
         }
       }
 
-      if (commandLineInfo.args.length > 0) {
-        String filename = expandFileName(commandLineInfo.args[0], true);
-
+      if (commandLineInfo.args.length >= 2) {
+        String jarfile = expandFileName(commandLineInfo.args[0], true);
+        AppPackage ap = null;
         // see if the first argument is actually an app package
         try {
-          AppPackage ap = new AppPackage(new File(filename));
-          ap.close();
-          new ShowLogicalPlanAppPackageCommand().execute(args, reader);
-          return;
-        } catch (Exception ex) {
+          ap = new AppPackage(new File(jarfile));
+        }
+        catch (Exception ex) {
           // fall through
         }
+        if (ap != null) {
+          new ShowLogicalPlanAppPackageCommand().execute(args, reader);
+          return;
+        }
+        String appName = commandLineInfo.args[1];
+        StramAppLauncher submitApp = getStramAppLauncher(jarfile, config, commandLineInfo.ignorePom);
+        submitApp.loadDependencies();
+        List<AppFactory> matchingAppFactories = getMatchingAppFactories(submitApp, appName, commandLineInfo.exactMatch);
+        if (matchingAppFactories == null || matchingAppFactories.isEmpty()) {
+          throw new CliException("No application in jar file matches '" + appName + "'");
+        }
+        else if (matchingAppFactories.size() > 1) {
+          throw new CliException("More than one application in jar file match '" + appName + "'");
+        }
+        else {
+          Map<String, Object> map = new HashMap<String, Object>();
+          PrintStream originalStream = System.out;
+          AppFactory appFactory = matchingAppFactories.get(0);
+          try {
+            if (raw) {
+              PrintStream dummyStream = new PrintStream(new OutputStream()
+              {
+                @Override
+                public void write(int b)
+                {
+                  // no-op
+                }
 
-        if (commandLineInfo.args.length >= 2) {
-          String appName = commandLineInfo.args[1];
+              });
+              System.setOut(dummyStream);
+            }
+            LogicalPlan logicalPlan = appFactory.createApp(submitApp.getLogicalPlanConfiguration());
+            map.put("applicationName", appFactory.getName());
+            map.put("logicalPlan", LogicalPlanSerializer.convertToMap(logicalPlan));
+          }
+          finally {
+            if (raw) {
+              System.setOut(originalStream);
+            }
+          }
+          printJson(map);
+        }
+      }
+      else if (commandLineInfo.args.length == 1) {
+        String filename = expandFileName(commandLineInfo.args[0], true);
+        if (filename.endsWith(".json")) {
+          File file = new File(filename);
+          StramAppLauncher submitApp = new StramAppLauncher(file.getName(), config);
+          AppFactory appFactory = new StramAppLauncher.JsonFileAppFactory(file);
+          LogicalPlan logicalPlan = appFactory.createApp(submitApp.getLogicalPlanConfiguration());
+          Map<String, Object> map = new HashMap<String, Object>();
+          map.put("applicationName", appFactory.getName());
+          map.put("logicalPlan", LogicalPlanSerializer.convertToMap(logicalPlan));
+          printJson(map);
+        }
+        else if (filename.endsWith(".properties")) {
+          File file = new File(filename);
+          StramAppLauncher submitApp = new StramAppLauncher(file.getName(), config);
+          AppFactory appFactory = new StramAppLauncher.PropertyFileAppFactory(file);
+          LogicalPlan logicalPlan = appFactory.createApp(submitApp.getLogicalPlanConfiguration());
+          Map<String, Object> map = new HashMap<String, Object>();
+          map.put("applicationName", appFactory.getName());
+          map.put("logicalPlan", LogicalPlanSerializer.convertToMap(logicalPlan));
+          printJson(map);
+        }
+        else {
           StramAppLauncher submitApp = getStramAppLauncher(filename, config, commandLineInfo.ignorePom);
           submitApp.loadDependencies();
-          List<AppFactory> matchingAppFactories = getMatchingAppFactories(submitApp, appName, commandLineInfo.exactMatch);
-          if (matchingAppFactories == null || matchingAppFactories.isEmpty()) {
-            throw new CliException("No application in jar file matches '" + appName + "'");
-          } else if (matchingAppFactories.size() > 1) {
-            throw new CliException("More than one application in jar file match '" + appName + "'");
-          } else {
-            Map<String, Object> map = new HashMap<String, Object>();
-            PrintStream originalStream = System.out;
-            AppFactory appFactory = matchingAppFactories.get(0);
-            try {
-              if (raw) {
-                PrintStream dummyStream = new PrintStream(new OutputStream()
-                {
-                  @Override
-                  public void write(int b)
-                  {
-                    // no-op
-                  }
-
-                });
-                System.setOut(dummyStream);
-              }
-              LogicalPlan logicalPlan = appFactory.createApp(submitApp.getLogicalPlanConfiguration());
-              map.put("applicationName", appFactory.getName());
-              map.put("logicalPlan", LogicalPlanSerializer.convertToMap(logicalPlan, false));
-            } finally {
-              if (raw) {
-                System.setOut(originalStream);
-              }
-            }
-            printJson(map);
+          List<Map<String, Object>> appList = new ArrayList<Map<String, Object>>();
+          List<AppFactory> appFactoryList = submitApp.getBundledTopologies();
+          for (AppFactory appFactory : appFactoryList) {
+            Map<String, Object> m = new HashMap<String, Object>();
+            m.put("name", appFactory.getName());
+            appList.add(m);
           }
-        } else {
-          if (filename.endsWith(".json")) {
-            File file = new File(filename);
-            StramAppLauncher submitApp = new StramAppLauncher(file.getName(), config);
-            AppFactory appFactory = new StramAppLauncher.JsonFileAppFactory(file);
-            LogicalPlan logicalPlan = appFactory.createApp(submitApp.getLogicalPlanConfiguration());
-            Map<String, Object> map = new HashMap<String, Object>();
-            map.put("applicationName", appFactory.getName());
-            map.put("logicalPlan", LogicalPlanSerializer.convertToMap(logicalPlan, false));
-            printJson(map);
-          } else if (filename.endsWith(".properties")) {
-            File file = new File(filename);
-            StramAppLauncher submitApp = new StramAppLauncher(file.getName(), config);
-            AppFactory appFactory = new StramAppLauncher.PropertyFileAppFactory(file);
-            LogicalPlan logicalPlan = appFactory.createApp(submitApp.getLogicalPlanConfiguration());
-            Map<String, Object> map = new HashMap<String, Object>();
-            map.put("applicationName", appFactory.getName());
-            map.put("logicalPlan", LogicalPlanSerializer.convertToMap(logicalPlan, false));
-            printJson(map);
-          } else {
-            StramAppLauncher submitApp = getStramAppLauncher(filename, config, commandLineInfo.ignorePom);
-            submitApp.loadDependencies();
-            List<Map<String, Object>> appList = new ArrayList<Map<String, Object>>();
-            List<AppFactory> appFactoryList = submitApp.getBundledTopologies();
-            for (AppFactory appFactory : appFactoryList) {
-              Map<String, Object> m = new HashMap<String, Object>();
-              m.put("name", appFactory.getName());
-              appList.add(m);
-            }
-            printJson(appList, "applications");
-          }
+          printJson(appList, "applications");
         }
-      } else {
+      }
+      else {
         if (currentApp == null) {
           throw new CliException("No application selected");
         }
@@ -2893,7 +2898,7 @@ public class DTCli
               Map<String, Object> map = new HashMap<String, Object>();
               map.put("applicationName", appInfo.name);
               if (appInfo.dag != null) {
-                map.put("logicalPlan", LogicalPlanSerializer.convertToMap(appInfo.dag, false));
+                map.put("logicalPlan", LogicalPlanSerializer.convertToMap(appInfo.dag));
               }
               if (appInfo.error != null) {
                 map.put("error", appInfo.error);
@@ -2997,44 +3002,37 @@ public class DTCli
       String[] jarFiles = files.split(",");
       File tmpDir = copyToLocal(jarFiles);
       try {
+        ObjectMapper defaultValueMapper = ObjectMapperFactory.getOperatorValueSerializer();
+        
         OperatorDiscoverer operatorDiscoverer = new OperatorDiscoverer(jarFiles);
         String searchTerm = commandLineInfo.args.length > 1 ? commandLineInfo.args[1] : null;
-        Set<String> operatorClasses = operatorDiscoverer.getOperatorClasses(parentName, searchTerm);
+        Set<Class<? extends Operator>> operatorClasses = operatorDiscoverer.getOperatorClasses(parentName, searchTerm);
         JSONObject json = new JSONObject();
         JSONArray arr = new JSONArray();
         JSONObject portClassHier = new JSONObject();
-        JSONObject portTypesWithSchemaClasses = new JSONObject();
 
         JSONObject failed = new JSONObject();
-
-        for (final String clazz : operatorClasses) {
+        for (Class<? extends Operator> clazz : operatorClasses) {
           try {
             JSONObject oper = operatorDiscoverer.describeOperator(clazz);
 
             // add default value
-            operatorDiscoverer.addDefaultValue(clazz, oper);
+            Operator operIns = clazz.newInstance();
+            String s = defaultValueMapper.writeValueAsString(operIns);
+            oper.put("defaultValue", new JSONObject(s).get(clazz.getName()));
             
-            // add class hierarchy info to portClassHier and fetch port types with schema classes
-            operatorDiscoverer.buildAdditionalPortInfo(oper, portClassHier, portTypesWithSchemaClasses);
-
-            Iterator portTypesIter = portTypesWithSchemaClasses.keys();
-            while (portTypesIter.hasNext()) {
-              if (!portTypesWithSchemaClasses.getBoolean((String) portTypesIter.next())) {
-                portTypesIter.remove();
-              }
-            }
+            // add class hier info to portClassHier
+            operatorDiscoverer.buildPortClassHier(oper, portClassHier);
 
             arr.put(oper);
           } catch (Exception | NoClassDefFoundError ex) {
             // ignore this class
-            final String cls = clazz;
+            final String cls = clazz.getName();
             failed.put(cls, ex.toString());
           }
         }
-
         json.put("operatorClasses", arr);
         json.put("portClassHier", portClassHier);
-        json.put("portTypesWithSchemaClasses", portTypesWithSchemaClasses);
         if (failed.length() > 0) {
           json.put("failedOperators", failed);
         }
@@ -3044,6 +3042,7 @@ public class DTCli
         FileUtils.deleteDirectory(tmpDir);
       }
     }
+
   }
 
   private class GetJarOperatorPropertiesCommand implements Command
@@ -3060,7 +3059,7 @@ public class DTCli
       try {
         OperatorDiscoverer operatorDiscoverer = new OperatorDiscoverer(jarFiles);
         Class<? extends Operator> operatorClass = operatorDiscoverer.getOperatorClass(args[2]);
-        printJson(operatorDiscoverer.describeOperator(operatorClass.getName()));
+        printJson(operatorDiscoverer.describeOperator(operatorClass));
       } finally {
         FileUtils.deleteDirectory(tmpDir);
       }
@@ -3429,19 +3428,14 @@ public class DTCli
 
   }
 
-  private void checkConfigPackageCompatible(AppPackage ap, ConfigPackage cp)
+  private void checkCompatible(AppPackage ap, ConfigPackage cp)
   {
     if (cp == null) {
       return;
     }
     String requiredAppPackageName = cp.getAppPackageName();
-    String requiredAppPackageGroupId = cp.getAppPackageGroupId();
     if (requiredAppPackageName != null && !requiredAppPackageName.equals(ap.getAppPackageName())) {
       throw new CliException("Config package requires an app package name of \"" + requiredAppPackageName + "\". The app package given has the name of \"" + ap.getAppPackageName() + "\"");
-    }
-    if (requiredAppPackageGroupId != null && !requiredAppPackageGroupId.equals(ap.getAppPackageGroupId())) {
-      throw new CliException("Config package requires an app package group id of \"" + requiredAppPackageGroupId +
-          "\". The app package given has the groupId of \"" + ap.getAppPackageGroupId() + "\"");
     }
     String requiredAppPackageMinVersion = cp.getAppPackageMinVersion();
     if (requiredAppPackageMinVersion != null && VersionInfo.compare(requiredAppPackageMinVersion, ap.getAppPackageVersion()) > 0) {
@@ -3450,14 +3444,6 @@ public class DTCli
     String requiredAppPackageMaxVersion = cp.getAppPackageMaxVersion();
     if (requiredAppPackageMaxVersion != null && VersionInfo.compare(requiredAppPackageMaxVersion, ap.getAppPackageVersion()) < 0) {
       throw new CliException("Config package requires an app package maximum version of \"" + requiredAppPackageMaxVersion + "\". The app package given is of version \"" + ap.getAppPackageVersion() + "\"");
-    }
-  }
-
-  private void checkPlatformCompatible(AppPackage ap)
-  {
-    String apVersion = ap.getDtEngineVersion();
-    if (!VersionInfo.isCompatible(VersionInfo.getVersion(), apVersion)) {
-      throw new CliException("This App Package is compiled with Apache Apex Core API version " + apVersion + ", which is incompatible with this Apex Core version " + VersionInfo.getVersion());
     }
   }
 
@@ -3864,7 +3850,6 @@ public class DTCli
     final Option originalAppID = add(OptionBuilder.withArgName("application id").hasArg().withDescription("Specify original application identifier for restart.").create("originalAppId"));
     final Option exactMatch = add(new Option("exactMatch", "Only consider applications with exact app name"));
     final Option queue = add(OptionBuilder.withArgName("queue name").hasArg().withDescription("Specify the queue to launch the application").create("queue"));
-    final Option force = add(new Option("force", "Force launch the application. Do not check for compatibility"));
 
     private Option add(Option opt)
     {
@@ -3905,7 +3890,6 @@ public class DTCli
     result.args = line.getArgs();
     result.origAppId = line.getOptionValue(LAUNCH_OPTIONS.originalAppID.getOpt());
     result.exactMatch = line.hasOption("exactMatch");
-    result.force = line.hasOption("force");
     return result;
   }
 
@@ -3922,7 +3906,6 @@ public class DTCli
     String archives;
     String origAppId;
     boolean exactMatch;
-    boolean force;
     String[] args;
   }
 

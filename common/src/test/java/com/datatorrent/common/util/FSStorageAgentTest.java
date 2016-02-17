@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.common.util;
 
@@ -22,15 +19,14 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Map;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.hadoop.fs.FileContext;
+import org.apache.hadoop.fs.Path;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
-
-import org.apache.commons.io.FileUtils;
-import org.apache.hadoop.fs.FileContext;
-import org.apache.hadoop.fs.Path;
 
 import com.google.common.collect.Maps;
 
@@ -51,7 +47,8 @@ public class FSStorageAgentTest
       applicationPath = "target/" + description.getClassName() + "/" + description.getMethodName();
       try {
         FileUtils.forceMkdir(new File("target/" + description.getClassName()));
-      } catch (IOException e) {
+      }
+      catch (IOException e) {
         throw new RuntimeException(e);
       }
       storageAgent = new FSStorageAgent(applicationPath, null);
@@ -65,7 +62,8 @@ public class FSStorageAgentTest
     {
       try {
         FileUtils.deleteDirectory(new File("target/" + description.getClassName()));
-      } catch (IOException e) {
+      }
+      catch (IOException e) {
         throw new RuntimeException(e);
       }
     }
@@ -83,7 +81,7 @@ public class FSStorageAgentTest
     data.put(3, "three");
     testMeta.storageAgent.save(data, 1, 1);
     @SuppressWarnings("unchecked")
-    Map<Integer, String> decoded = (Map<Integer, String>)testMeta.storageAgent.load(1, 1);
+    Map<Integer, String> decoded = (Map<Integer, String>) testMeta.storageAgent.load(1, 1);
     Assert.assertEquals("dataOf1", data, decoded);
   }
 
@@ -103,10 +101,10 @@ public class FSStorageAgentTest
     testMeta.storageAgent.save(dataOf1, 1, 1);
     testMeta.storageAgent.save(dataOf2, 2, 1);
     @SuppressWarnings("unchecked")
-    Map<Integer, String> decoded1 = (Map<Integer, String>)testMeta.storageAgent.load(1, 1);
+    Map<Integer, String> decoded1 = (Map<Integer, String>) testMeta.storageAgent.load(1, 1);
 
     @SuppressWarnings("unchecked")
-    Map<Integer, String> decoded2 = (Map<Integer, String>)testMeta.storageAgent.load(2, 1);
+    Map<Integer, String> decoded2 = (Map<Integer, String>) testMeta.storageAgent.load(2, 1);
     Assert.assertEquals("data of 1", dataOf1, decoded1);
     Assert.assertEquals("data of 2", dataOf2, decoded2);
   }

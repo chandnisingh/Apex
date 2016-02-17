@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.appdata;
 
@@ -41,20 +38,16 @@ import com.google.common.collect.Maps;
 import com.datatorrent.api.AutoMetric;
 import com.datatorrent.api.Context.DAGContext;
 
-import com.datatorrent.api.StringCodec;
-import com.datatorrent.common.metric.AutoMetricBuiltInTransport;
 import com.datatorrent.common.util.Pair;
-import com.datatorrent.stram.PubSubWebSocketMetricTransport;
 import com.datatorrent.stram.StramAppContext;
 import com.datatorrent.stram.StreamingContainerManager;
+import com.datatorrent.stram.WebsocketAppDataPusher;
+import com.datatorrent.stram.api.AppDataPusher;
 import com.datatorrent.stram.plan.logical.LogicalPlan;
-import com.datatorrent.stram.plan.logical.MetricAggregatorMeta;
 import com.datatorrent.stram.webapp.LogicalOperatorInfo;
 
 /**
- * <p>AppDataPushAgent class.</p>
  *
- * @since 3.0.0
  */
 public class AppDataPushAgent extends AbstractService
 {
@@ -66,7 +59,7 @@ public class AppDataPushAgent extends AbstractService
   private final StreamingContainerManager dnmgr;
   private final StramAppContext appContext;
   private final AppDataPushThread appDataPushThread = new AppDataPushThread();
-  private AutoMetric.Transport metricsTransport;
+  private AppDataPusher appDataPusher;
   private final Map<Class<?>, List<Field>> cacheFields = new HashMap<Class<?>, List<Field>>();
   private final Map<Class<?>, Map<String, Method>> cacheGetMethods = new HashMap<Class<?>, Map<String, Method>>();
 
@@ -83,7 +76,7 @@ public class AppDataPushAgent extends AbstractService
   @Override
   protected void serviceStop() throws Exception
   {
-    if (metricsTransport != null) {
+    if (appDataPusher != null) {
       appDataPushThread.interrupt();
       try {
         appDataPushThread.join();
@@ -97,7 +90,7 @@ public class AppDataPushAgent extends AbstractService
   @Override
   protected void serviceStart() throws Exception
   {
-    if (metricsTransport != null) {
+    if (appDataPusher != null) {
       appDataPushThread.start();
     }
     super.serviceStart();
@@ -112,12 +105,15 @@ public class AppDataPushAgent extends AbstractService
 
   public void init()
   {
-    metricsTransport = dnmgr.getLogicalPlan().getValue(DAGContext.METRICS_TRANSPORT);
-    if (metricsTransport instanceof AutoMetricBuiltInTransport) {
-      AutoMetricBuiltInTransport transport = (AutoMetricBuiltInTransport)metricsTransport;
-      metricsTransport = new PubSubWebSocketMetricTransport(dnmgr.getWsClient(), transport.getTopic(), transport.getSchemaResendInterval());
+    String appDataPushTransport = dnmgr.getLogicalPlan().getValue(DAGContext.METRICS_TRANSPORT);
+    if (appDataPushTransport.startsWith(APP_DATA_PUSH_TRANSPORT_BUILTIN_VALUE + ":")) {
+      String topic = appDataPushTransport.substring(APP_DATA_PUSH_TRANSPORT_BUILTIN_VALUE.length() + 1);
+      appDataPusher = new WebsocketAppDataPusher(dnmgr.getWsClient(), topic);
+      LOG.info("App Data Push Transport set up for {}", appDataPushTransport);
+    } else {
+      // TBD add kakfa
+      LOG.error("App Data Push Transport not recognized: {}", appDataPushTransport);
     }
-    LOG.info("Metrics Transport set up for {}", metricsTransport);
   }
 
   private JSONObject getPushData()
@@ -131,6 +127,7 @@ public class AppDataPushAgent extends AbstractService
       json.put("appUser", appContext.getUser());
       List<LogicalOperatorInfo> logicalOperatorInfoList = dnmgr.getLogicalOperatorInfoList();
       JSONObject logicalOperators = new JSONObject();
+      long resendSchemaInterval = appDataPusher.getResendSchemaInterval();
       for (LogicalOperatorInfo logicalOperator : logicalOperatorInfoList) {
         JSONObject logicalOperatorJson = extractFields(logicalOperator);
         JSONArray metricsList = new JSONArray();
@@ -142,9 +139,8 @@ public class AppDataPushAgent extends AbstractService
             // metric name, aggregated value
             Map<String, Object> aggregates = metrics.second;
             long now = System.currentTimeMillis();
-            if (!operatorsSchemaLastSentTime.containsKey(logicalOperator.name) ||
-                (metricsTransport.getSchemaResendInterval() > 0 &&
-                    operatorsSchemaLastSentTime.get(logicalOperator.name) < now - metricsTransport.getSchemaResendInterval())) {
+            if (!operatorsSchemaLastSentTime.containsKey(logicalOperator.name)
+                    || operatorsSchemaLastSentTime.get(logicalOperator.name) < now - resendSchemaInterval) {
               try {
                 pushMetricsSchema(dnmgr.getLogicalPlan().getOperatorMeta(logicalOperator.name), aggregates);
                 operatorsSchemaLastSentTime.put(logicalOperator.name, now);
@@ -252,7 +248,7 @@ public class AppDataPushAgent extends AbstractService
       result.put("appName", dnmgr.getApplicationAttributes().get(DAGContext.APPLICATION_NAME));
       result.put("logicalOperatorName", operatorMeta.getName());
 
-      MetricAggregatorMeta metricAggregatorMeta = operatorMeta.getMetricAggregatorMeta();
+      LogicalPlan.MetricAggregatorMeta metricAggregatorMeta = operatorMeta.getMetricAggregatorMeta();
       JSONArray valueSchemas = new JSONArray();
       for (Map.Entry<String, Object> entry : aggregates.entrySet()) {
         String metricName = entry.getKey();
@@ -263,14 +259,14 @@ public class AppDataPushAgent extends AbstractService
         valueSchema.put("type", type == null ? metricValue.getClass().getCanonicalName() : type);
         String[] dimensionAggregators = metricAggregatorMeta.getDimensionAggregatorsFor(metricName);
         if (dimensionAggregators != null) {
-          valueSchema.put("dimensionAggregators", Arrays.asList(dimensionAggregators));
+          valueSchema.put("dimensionAggregators", dimensionAggregators);
         }
         valueSchemas.put(valueSchema);
       }
       result.put("values", valueSchemas);
       String[] timeBuckets = metricAggregatorMeta.getTimeBuckets();
       if (timeBuckets != null) {
-        result.put("timeBuckets", Arrays.asList(timeBuckets));
+        result.put("timeBuckets", timeBuckets);
       }
 
     } catch (JSONException ex) {
@@ -286,12 +282,12 @@ public class AppDataPushAgent extends AbstractService
       schema = getMetricsSchemaData(operatorMeta, aggregates);
       operatorSchemas.put(operatorMeta.getName(), schema);
     }
-    metricsTransport.push(schema.toString());
+    appDataPusher.push(schema);
   }
 
   public void pushData() throws IOException
   {
-    metricsTransport.push(getPushData().toString());
+    appDataPusher.push(getPushData());
   }
 
   public class AppDataPushThread extends Thread

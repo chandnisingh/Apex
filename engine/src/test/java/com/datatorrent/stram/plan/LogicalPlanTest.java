@@ -1,30 +1,24 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
-package com.datatorrent.stram.plan.logical;
+package com.datatorrent.stram.plan;
 
 import com.datatorrent.common.util.BaseOperator;
-import com.datatorrent.common.util.DefaultDelayOperator;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.Serializable;
-import java.lang.reflect.Field;
 import java.util.*;
 
 import javax.validation.*;
@@ -36,7 +30,6 @@ import javax.validation.constraints.Pattern;
 import com.esotericsoftware.kryo.DefaultSerializer;
 import com.esotericsoftware.kryo.serializers.JavaSerializer;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -62,12 +55,10 @@ import com.datatorrent.stram.plan.logical.LogicalPlan.StreamMeta;
 import com.datatorrent.stram.support.StramTestSupport.MemoryStorageAgent;
 import com.datatorrent.stram.support.StramTestSupport.RegexMatcher;
 
-public class LogicalPlanTest
-{
+public class LogicalPlanTest {
 
   @Test
-  public void testCycleDetection()
-  {
+  public void testCycleDetection() {
      LogicalPlan dag = new LogicalPlan();
 
      //NodeConf operator1 = b.getOrAddNode("operator1");
@@ -94,20 +85,20 @@ public class LogicalPlanTest
        // expected, stream can have single input/output only
      }
 
-     LogicalPlan.ValidationContext vc = new LogicalPlan.ValidationContext();
-     dag.findStronglyConnected(dag.getMeta(operator7), vc);
-     assertEquals("operator self reference", 1, vc.invalidCycles.size());
-     assertEquals("operator self reference", 1, vc.invalidCycles.get(0).size());
-     assertEquals("operator self reference", dag.getMeta(operator7), vc.invalidCycles.get(0).iterator().next());
+     List<List<String>> cycles = new ArrayList<List<String>>();
+     dag.findStronglyConnected(dag.getMeta(operator7), cycles);
+     assertEquals("operator self reference", 1, cycles.size());
+     assertEquals("operator self reference", 1, cycles.get(0).size());
+     assertEquals("operator self reference", operator7.getName(), cycles.get(0).get(0));
 
      // 3 operator cycle
-     vc = new LogicalPlan.ValidationContext();
-     dag.findStronglyConnected(dag.getMeta(operator4), vc);
-     assertEquals("3 operator cycle", 1, vc.invalidCycles.size());
-     assertEquals("3 operator cycle", 3, vc.invalidCycles.get(0).size());
-     assertTrue("operator2", vc.invalidCycles.get(0).contains(dag.getMeta(operator2)));
-     assertTrue("operator3", vc.invalidCycles.get(0).contains(dag.getMeta(operator3)));
-     assertTrue("operator4", vc.invalidCycles.get(0).contains(dag.getMeta(operator4)));
+     cycles.clear();
+     dag.findStronglyConnected(dag.getMeta(operator4), cycles);
+     assertEquals("3 operator cycle", 1, cycles.size());
+     assertEquals("3 operator cycle", 3, cycles.get(0).size());
+     assertTrue("operator2", cycles.get(0).contains(operator2.getName()));
+     assertTrue("operator3", cycles.get(0).contains(operator3.getName()));
+     assertTrue("operator4", cycles.get(0).contains(operator4.getName()));
 
      try {
        dag.validate();
@@ -118,44 +109,13 @@ public class LogicalPlanTest
 
   }
 
-  @Test
-  public void testCycleDetectionWithDelay()
-  {
-    LogicalPlan dag = new LogicalPlan();
-
-    TestGeneratorInputOperator opA = dag.addOperator("A", TestGeneratorInputOperator.class);
-    GenericTestOperator opB = dag.addOperator("B", GenericTestOperator.class);
-    GenericTestOperator opC = dag.addOperator("C", GenericTestOperator.class);
-    GenericTestOperator opD = dag.addOperator("D", GenericTestOperator.class);
-    DefaultDelayOperator<Object> opDelay = dag.addOperator("opDelay", new DefaultDelayOperator<>());
-    DefaultDelayOperator<Object> opDelay2 = dag.addOperator("opDelay2", new DefaultDelayOperator<>());
-
-    dag.addStream("AtoB", opA.outport, opB.inport1);
-    dag.addStream("BtoC", opB.outport1, opC.inport1);
-    dag.addStream("CtoD", opC.outport1, opD.inport1);
-    dag.addStream("CtoDelay", opC.outport2, opDelay.input);
-    dag.addStream("DtoDelay", opD.outport1, opDelay2.input);
-    dag.addStream("DelayToB", opDelay.output, opB.inport2);
-    dag.addStream("Delay2ToC", opDelay2.output, opC.inport2);
-
-    LogicalPlan.ValidationContext vc = new LogicalPlan.ValidationContext();
-    dag.findStronglyConnected(dag.getMeta(opA), vc);
-
-    Assert.assertEquals("No invalid cycle", Collections.emptyList(), vc.invalidCycles);
-    Set<OperatorMeta> exp = Sets.newHashSet(dag.getMeta(opDelay2), dag.getMeta(opDelay), dag.getMeta(opC), dag.getMeta(opB), dag.getMeta(opD));
-    Assert.assertEquals("cycle", exp, vc.stronglyConnected.get(0));
-  }
-
-
-  public static class ValidationOperator extends BaseOperator
-  {
+  public static class ValidationOperator extends BaseOperator {
     public final transient DefaultOutputPort<Object> goodOutputPort = new DefaultOutputPort<Object>();
 
     public final transient DefaultOutputPort<Object> badOutputPort = new DefaultOutputPort<Object>();
   }
 
-  public static class CounterOperator extends BaseOperator
-  {
+  public static class CounterOperator extends BaseOperator {
     final public transient InputPort<Object> countInputPort = new DefaultInputPort<Object>() {
       @Override
       final public void process(Object payload) {
@@ -164,8 +124,8 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testLogicalPlanSerialization() throws Exception
-  {
+  public void testLogicalPlanSerialization() throws Exception {
+
     LogicalPlan dag = new LogicalPlan();
     dag.setAttribute(OperatorContext.STORAGE_AGENT, new MemoryStorageAgent());
 
@@ -222,8 +182,7 @@ public class LogicalPlanTest
     Assert.assertEquals("", 2, dag.getAllOperators().size());
   }
 
-  public static class ValidationTestOperator extends BaseOperator implements InputOperator
-  {
+  public static class ValidationTestOperator extends BaseOperator implements InputOperator {
     @NotNull
     @Pattern(regexp=".*malhar.*", message="Value has to contain 'malhar'!")
     private String stringField1;
@@ -306,8 +265,8 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testOperatorValidation()
-  {
+  public void testOperatorValidation() {
+
     ValidationTestOperator bean = new ValidationTestOperator();
     bean.stringField1 = "malhar1";
     bean.intField1 = 1;
@@ -335,7 +294,7 @@ public class LogicalPlanTest
       Assert.fail("should throw ConstraintViolationException");
     } catch (ConstraintViolationException e) {
       Assert.assertEquals("violation details", constraintViolations, e.getConstraintViolations());
-      String expRegex = ".*ValidationTestOperator\\{name=null}, propertyPath='intField1', message='must be greater than or equal to 2',.*value=1}]";
+      String expRegex = ".*ValidationTestOperator\\{name=testOperator}, propertyPath='intField1', message='must be greater than or equal to 2',.*value=1}]";
       Assert.assertThat("exception message", e.getMessage(), RegexMatcher.matches(expRegex));
     }
 
@@ -383,8 +342,7 @@ public class LogicalPlanTest
   }
 
   @OperatorAnnotation(partitionable = false)
-  public static class TestOperatorAnnotationOperator extends BaseOperator
-  {
+  public static class TestOperatorAnnotationOperator extends BaseOperator {
 
     @InputPortFieldAnnotation( optional = true)
     final public transient DefaultInputPort<Object> input1 = new DefaultInputPort<Object>() {
@@ -394,13 +352,11 @@ public class LogicalPlanTest
     };
   }
 
-  class NoInputPortOperator extends BaseOperator
-  {
+  class NoInputPortOperator extends BaseOperator {
   }
 
   @Test
-  public void testValidationForNonInputRootOperator()
-  {
+  public void testValidationForNonInputRootOperator() {
     LogicalPlan dag = new LogicalPlan();
     NoInputPortOperator x = dag.addOperator("x", new NoInputPortOperator());
     try {
@@ -412,8 +368,8 @@ public class LogicalPlanTest
   }
 
   @OperatorAnnotation(partitionable = false)
-  public static class TestOperatorAnnotationOperator2 extends BaseOperator implements Partitioner<TestOperatorAnnotationOperator2>
-  {
+  public static class TestOperatorAnnotationOperator2 extends BaseOperator implements Partitioner<TestOperatorAnnotationOperator2> {
+
     @Override
     public Collection<Partition<TestOperatorAnnotationOperator2>> definePartitions(Collection<Partition<TestOperatorAnnotationOperator2>> partitions, PartitioningContext context)
     {
@@ -427,8 +383,7 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testOperatorAnnotation()
-  {
+  public void testOperatorAnnotation() {
     LogicalPlan dag = new LogicalPlan();
     TestGeneratorInputOperator input = dag.addOperator("input1", TestGeneratorInputOperator.class);
     TestOperatorAnnotationOperator operator = dag.addOperator("operator1", TestOperatorAnnotationOperator.class);
@@ -441,7 +396,7 @@ public class LogicalPlanTest
       dag.validate();
       Assert.fail("should raise operator is not partitionable for operator1");
     } catch (ValidationException e) {
-      Assert.assertEquals("", "Operator " + dag.getMeta(operator).getName() + " provides partitioning capabilities but the annotation on the operator class declares it non partitionable!", e.getMessage());
+      Assert.assertEquals("", "Operator " + operator.getName() + " provides partitioning capabilities but the annotation on the operator class declares it non partitionable!", e.getMessage());
     }
 
     dag.setAttribute(operator, OperatorContext.PARTITIONER, null);
@@ -451,7 +406,7 @@ public class LogicalPlanTest
       dag.validate();
       Assert.fail("should raise operator is not partitionable for operator1");
     } catch (ValidationException e) {
-      Assert.assertEquals("", "Operator " + dag.getMeta(operator).getName() + " is not partitionable but PARTITION_PARALLEL attribute is set", e.getMessage());
+      Assert.assertEquals("", "Operator " + operator.getName() + " is not partitionable but PARTITION_PARALLEL attribute is set", e.getMessage());
     }
 
     dag.setInputPortAttribute(operator.input1, PortContext.PARTITION_PARALLEL, false);
@@ -464,13 +419,13 @@ public class LogicalPlanTest
       dag.validate();
       Assert.fail("should raise operator is not partitionable for operator2");
     } catch (ValidationException e) {
-      Assert.assertEquals("Operator " + dag.getMeta(operator2).getName() + " provides partitioning capabilities but the annotation on the operator class declares it non partitionable!", e.getMessage());
+      Assert.assertEquals("Operator " + operator2.getName() + " provides partitioning capabilities but the annotation on the operator class declares it non partitionable!", e.getMessage());
     }
   }
 
   @Test
-  public void testPortConnectionValidation()
-  {
+  public void testPortConnectionValidation() {
+
     LogicalPlan dag = new LogicalPlan();
 
     TestNonOptionalOutportInputOperator input = dag.addOperator("input1", TestNonOptionalOutportInputOperator.class);
@@ -498,8 +453,7 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testAtMostOnceProcessingModeValidation()
-  {
+  public void testAtMostOnceProcessingModeValidation() {
     LogicalPlan dag = new LogicalPlan();
 
     TestGeneratorInputOperator input1 = dag.addOperator("input1", TestGeneratorInputOperator.class);
@@ -529,9 +483,8 @@ public class LogicalPlanTest
 
   }
 
-  @Test
-  public void testExactlyOnceProcessingModeValidation()
-  {
+    @Test
+  public void testExactlyOnceProcessingModeValidation() {
     LogicalPlan dag = new LogicalPlan();
 
     TestGeneratorInputOperator input1 = dag.addOperator("input1", TestGeneratorInputOperator.class);
@@ -568,8 +521,7 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testLocalityValidation()
-  {
+  public void testLocalityValidation() {
     LogicalPlan dag = new LogicalPlan();
 
     TestGeneratorInputOperator input1 = dag.addOperator("input1", TestGeneratorInputOperator.class);
@@ -591,8 +543,7 @@ public class LogicalPlanTest
     dag.validate();
   }
 
-  private class TestAnnotationsOperator extends BaseOperator implements InputOperator
-  {
+  private class TestAnnotationsOperator extends BaseOperator implements InputOperator {
     //final public transient DefaultOutputPort<Object> outport1 = new DefaultOutputPort<Object>();
 
     @OutputPortFieldAnnotation( optional=false)
@@ -605,8 +556,7 @@ public class LogicalPlanTest
     }
   }
 
-  private class TestAnnotationsOperator2 extends BaseOperator implements InputOperator
-  {
+  private class TestAnnotationsOperator2 extends BaseOperator implements InputOperator{
     // multiple ports w/o annotation, one of them must be connected
     final public transient DefaultOutputPort<Object> outport1 = new DefaultOutputPort<Object>();
 
@@ -617,8 +567,7 @@ public class LogicalPlanTest
     }
   }
 
-  private class TestAnnotationsOperator3 extends BaseOperator implements InputOperator
-  {
+  private class TestAnnotationsOperator3 extends BaseOperator implements InputOperator{
     // multiple ports w/o annotation, one of them must be connected
     @OutputPortFieldAnnotation( optional=true)
     final public transient DefaultOutputPort<Object> outport1 = new DefaultOutputPort<Object>();
@@ -632,8 +581,7 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testOutputPortAnnotation()
-  {
+  public void testOutputPortAnnotation() {
     LogicalPlan dag = new LogicalPlan();
     TestAnnotationsOperator ta1 = dag.addOperator("testAnnotationsOperator", new TestAnnotationsOperator());
 
@@ -665,12 +613,28 @@ public class LogicalPlanTest
 
   }
 
+  public class DuplicatePortOperator extends GenericTestOperator {
+    @SuppressWarnings("FieldNameHidesFieldInSuperclass")
+    final public transient DefaultOutputPort<Object> outport1 = new DefaultOutputPort<Object>();
+  }
+
+  @Test
+  public void testDuplicatePort() {
+    LogicalPlan dag = new LogicalPlan();
+    DuplicatePortOperator o1 = dag.addOperator("o1", new DuplicatePortOperator());
+    try {
+      dag.setOutputPortAttribute(o1.outport1, PortContext.QUEUE_CAPACITY, 0);
+      Assert.fail("Should detect duplicate port");
+    } catch (IllegalArgumentException e) {
+      // expected
+    }
+  }
+
   /**
    * Operator that can be used with default Java serialization instead of Kryo
    */
   @DefaultSerializer(JavaSerializer.class)
-  public static class JdkSerializableOperator extends BaseOperator implements Serializable
-  {
+  public static class JdkSerializableOperator extends BaseOperator implements Serializable {
     private static final long serialVersionUID = -4024202339520027097L;
 
     public abstract class SerializableInputPort<T> implements InputPort<T>, Sink<T>, java.io.Serializable {
@@ -720,8 +684,7 @@ public class LogicalPlanTest
   }
 
   @Test
-  public void testJdkSerializableOperator() throws Exception
-  {
+  public void testJdkSerializableOperator() throws Exception {
     LogicalPlan dag = new LogicalPlan();
     dag.addOperator("o1", new JdkSerializableOperator());
 
@@ -734,85 +697,7 @@ public class LogicalPlanTest
     Assert.assertNotNull("port object null", o1Clone.inport1);
   }
 
-  @Test
-  public void testAttributeValuesSerializableCheck() throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException
-  {
-    LogicalPlan dag = new LogicalPlan();
-    Attribute<Object> attr = new Attribute<Object>(new TestAttributeValue(), new Object2String());
-    Field nameField = Attribute.class.getDeclaredField("name");
-    nameField.setAccessible(true);
-    nameField.set(attr, "Test_Attribute");
-    nameField.setAccessible(false);
-
-    assertNotNull(attr);
-    // Dag attribute not serializable test
-    dag.setAttribute(attr, new TestAttributeValue());
-    try {
-      dag.validate();
-      Assert.fail("Setting not serializable attribute should throw exception");
-    } catch (ValidationException e) {
-      assertEquals("Validation Exception should match ", "Attribute value(s) for Test_Attribute in com.datatorrent.api.DAG are not serializable", e.getMessage());
-    }
-
-    // Operator attribute not serializable test
-    dag = new LogicalPlan();
-    TestGeneratorInputOperator operator = dag.addOperator("TestOperator", TestGeneratorInputOperator.class);
-    dag.setAttribute(operator, attr, new TestAttributeValue());
-    try {
-      dag.validate();
-      Assert.fail("Setting not serializable attribute should throw exception");
-    } catch (ValidationException e) {
-      assertEquals("Validation Exception should match ", "Attribute value(s) for Test_Attribute in TestOperator are not serializable", e.getMessage());
-    }
-
-    // Output Port attribute not serializable test
-    dag = new LogicalPlan();
-    operator = dag.addOperator("TestOperator", TestGeneratorInputOperator.class);
-    dag.setOutputPortAttribute(operator.outport, attr, new TestAttributeValue());
-    try {
-      dag.validate();
-      Assert.fail("Setting not serializable attribute should throw exception");
-    } catch (ValidationException e) {
-      assertEquals("Validation Exception should match ", "Attribute value(s) for Test_Attribute in TestOperator.outport are not serializable", e.getMessage());
-    }
-
-    // Input Port attribute not serializable test
-    dag = new LogicalPlan();
-    GenericTestOperator operator1 = dag.addOperator("TestOperator", GenericTestOperator.class);
-    dag.setInputPortAttribute(operator1.inport1, attr, new TestAttributeValue());
-    try {
-      dag.validate();
-      Assert.fail("Setting non serializable attribute should throw exception");
-    } catch (ValidationException e) {
-      assertEquals("Validation Exception should match ", "Attribute value(s) for Test_Attribute in TestOperator.inport1 are not serializable", e.getMessage());
-    }
-  }
-
-  private static class Object2String implements StringCodec<Object>
-  {
-
-    @Override
-    public Object fromString(String string)
-    {
-      // Stub method for testing - do nothing
-      return null;
-    }
-
-    @Override
-    public String toString(Object pojo)
-    {
-      // Stub method for testing - do nothing
-      return null;
-    }
-
-  }
-
-  private static class TestAttributeValue
-  {
-  }
-
-  private static class TestStreamCodec implements StreamCodec<Object>
-  {
+  private static class TestStreamCodec implements StreamCodec<Object> {
     @Override
     public Object fromByteArray(Slice fragment)
     {
@@ -833,8 +718,7 @@ public class LogicalPlanTest
     }
   }
 
-  public static class TestPortCodecOperator extends BaseOperator
-  {
+  public static class TestPortCodecOperator extends BaseOperator {
     public transient final DefaultInputPort<Object> inport1 = new DefaultInputPort<Object>()
     {
       @Override
@@ -960,105 +844,6 @@ public class LogicalPlanTest
   @OperatorAnnotation(checkpointableWithinAppWindow = false)
   class NotCheckpointableWithinAppWindowOperator extends GenericTestOperator
   {
-  }
-
-  @Test
-  public void testInputPortHiding()
-  {
-    LogicalPlan dag = new LogicalPlan();
-    TestGeneratorInputOperator input1 = dag.addOperator("input1", TestGeneratorInputOperator.class);
-    Operator2 operator2 = dag.addOperator("operator2", new Operator2());
-    dag.addStream("Stream1", input1.outport, operator2.input);
-    dag.validate();
-  }
-
-  @Test
-  public void testInvalidInputPortConnection()
-  {
-    LogicalPlan dag = new LogicalPlan();
-    TestGeneratorInputOperator input1 = dag.addOperator("input1", TestGeneratorInputOperator.class);
-    Operator1 operator1 = dag.addOperator("operator3", new Operator3());
-    dag.addStream("Stream1", input1.outport, operator1.input);
-    try {
-      dag.validate();
-    } catch (ValidationException ex) {
-      Assert.assertTrue("validation message", ex.getMessage().startsWith("Invalid port connected"));
-      return;
-    }
-    Assert.fail();
-  }
-
-  class Operator1 extends BaseOperator
-  {
-    public final transient DefaultInputPort<Object> input = new DefaultInputPort<Object>()
-    {
-      @Override
-      public void process(Object tuple)
-      {
-
-      }
-    };
-  }
-
-  class Operator2 extends Operator1
-  {
-    public final transient DefaultInputPort<Object> input = new DefaultInputPort<Object>()
-    {
-      @Override
-      public void process(Object tuple)
-      {
-
-      }
-    };
-  }
-
-  class Operator3 extends Operator1
-  {
-    @InputPortFieldAnnotation(optional = true)
-    public final transient DefaultInputPort<Object> input = new DefaultInputPort<Object>()
-    {
-      @Override
-      public void process(Object tuple)
-      {
-
-      }
-    };
-  }
-
-  @Test
-  public void testOutputPortHiding()
-  {
-    LogicalPlan dag = new LogicalPlan();
-    Operator5 operator5 = dag.addOperator("input", new Operator5());
-    Operator2 operator2 = dag.addOperator("operator2", new Operator2());
-    dag.addStream("Stream1", operator5.output, operator2.input);
-    dag.validate();
-  }
-
-  @Test(expected = ValidationException.class)
-  public void testInvalidOutputPortConnection()
-  {
-    LogicalPlan dag = new LogicalPlan();
-    Operator4 operator4 = dag.addOperator("input", new Operator5());
-    Operator3 operator3 = dag.addOperator("operator3", new Operator3());
-    dag.addStream("Stream1", operator4.output, operator3.input);
-    dag.validate();
-  }
-
-  class Operator4 extends BaseOperator implements InputOperator
-  {
-    public final transient DefaultOutputPort<Object> output = new DefaultOutputPort<>();
-
-    @Override
-    public void emitTuples()
-    {
-
-    }
-  }
-
-  class Operator5 extends Operator4
-  {
-    public final transient DefaultOutputPort<Object> output = new DefaultOutputPort<>();
   }
 
   /*

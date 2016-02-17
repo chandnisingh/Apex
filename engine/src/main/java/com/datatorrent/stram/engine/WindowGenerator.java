@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.engine;
 
@@ -272,34 +269,6 @@ public class WindowGenerator extends MuxReservoir implements Stream, Runnable
     return getWindowMillis(windowId, firstWindowMillis, windowWidthMillis) + windowWidthMillis;
   }
 
-  public static long getNextWindowId(long windowId, long firstWindowMillis, long windowWidthMillis)
-  {
-    return getAheadWindowId(windowId, firstWindowMillis, windowWidthMillis, 1);
-  }
-
-  public static long getAheadWindowId(long windowId, long firstWindowMillis, long windowWidthMillis, int ahead)
-  {
-    long millis = getWindowMillis(windowId, firstWindowMillis, windowWidthMillis);
-    millis += ahead * windowWidthMillis;
-    return getWindowId(millis, firstWindowMillis, windowWidthMillis);
-  }
-
-  /**
-   * Returns the number of windows windowIdA is ahead of windowIdB.
-   *
-   * @param windowIdA
-   * @param windowIdB
-   * @param firstWindowMillis
-   * @param windowWidthMillis
-   * @return the number of windows ahead, negative if windowIdA is behind windowIdB
-   */
-  public static long compareWindowId(long windowIdA, long windowIdB, long firstWindowMillis, long windowWidthMillis)
-  {
-    long millisA = getWindowMillis(windowIdA, firstWindowMillis, windowWidthMillis);
-    long millisB = getWindowMillis(windowIdB, firstWindowMillis, windowWidthMillis);
-    return (millisA - millisB) / windowWidthMillis;
-  }
-
   /**
    * @param windowId
    * @param firstWindowMillis
@@ -308,31 +277,9 @@ public class WindowGenerator extends MuxReservoir implements Stream, Runnable
    */
   public static long getWindowMillis(long windowId, long firstWindowMillis, long windowWidthMillis)
   {
-    if (windowId == -1) {
-      return firstWindowMillis;
-    }
-    long baseMillis = (windowId >> 32) * 1000;
-    long diff = baseMillis - firstWindowMillis;
-    long baseChangeInterval = windowWidthMillis * (WindowGenerator.MAX_WINDOW_ID + 1);
-    assert (baseChangeInterval > 0);
-    long multiplier = diff / baseChangeInterval;
-    if (diff % baseChangeInterval > 0) {
-      multiplier++;
-    }
-    assert (multiplier >= 0);
-    windowId = windowId & WindowGenerator.WINDOW_MASK;
-    return firstWindowMillis + (multiplier * baseChangeInterval) + (windowId * windowWidthMillis);
-  }
-
-  /**
-   * Utility function to get the base seconds from a window id
-   *
-   * @param windowId
-   * @return the base seconds for the given window id
-   */
-  public static long getBaseSecondsFromWindowId(long windowId)
-  {
-    return windowId >>> 32;
+    long millis = (windowId >> 32) * 1000 + windowWidthMillis * (windowId & WindowGenerator.WINDOW_MASK);
+    millis = millis > firstWindowMillis ? millis : firstWindowMillis;
+    return millis;
   }
 
   private class MasterReservoir extends CircularBuffer<Tuple> implements Reservoir

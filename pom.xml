@@ -1,73 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-
-    Licensed to the Apache Software Foundation (ASF) under one
-    or more contributor license agreements.  See the NOTICE file
-    distributed with this work for additional information
-    regarding copyright ownership.  The ASF licenses this file
-    to you under the Apache License, Version 2.0 (the
-    "License"); you may not use this file except in compliance
-    with the License.  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing,
-    software distributed under the License is distributed on an
-    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-    KIND, either express or implied.  See the License for the
-    specific language governing permissions and limitations
-    under the License.
-
--->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <parent>
-    <groupId>org.apache</groupId>
-    <artifactId>apache</artifactId>
-    <version>16</version>
-  </parent>
-
-  <groupId>org.apache.apex</groupId>
-  <artifactId>apex</artifactId>
-  <version>3.4.0-incubating-SNAPSHOT</version>
+  <groupId>com.datatorrent</groupId>
+  <artifactId>dt-framework</artifactId>
+  <version>2.2.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
-  <name>Apache Apex (incubating)</name>
-  <url>http://apex.incubator.apache.org</url>
-  <inceptionYear>2015</inceptionYear>
+  <name>Realtime Stream Processing Framework</name>
+  <url>http://www.datatorrent.com</url>
 
   <organization>
-    <name>Apache Software Foundation</name>
-    <url>http://www.apache.org</url>
+    <name>DataTorrent, Inc.</name>
+    <url>http://www.datatorrent.com/</url>
   </organization>
 
   <licenses>
     <license>
-      <name>The Apache Software License, Version 2.0</name>
-      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <name>Copyright &copy; 2015 DataTorrent, Inc.</name>
+      <url>http://www.datatorrent.com/</url>
     </license>
   </licenses>
 
-  <prerequisites>
-    <maven>3.0.5</maven>
-  </prerequisites>
-
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <netbeans.hint.license>datatorrent-inc</netbeans.hint.license>
     <maven.compiler.optimize>false</maven.compiler.optimize>
     <maven.build.timestamp.format>yyyyMMdd</maven.build.timestamp.format>
     <hadoop.version>2.2.0</hadoop.version>
     <github.global.server>github</github.global.server>
     <jackson.version>1.9.2</jackson.version>
     <jersey.version>1.9</jersey.version>
-    <!-- do not change jetty version as later versions have problems with DefaultServlet -->
-    <jetty.version>8.1.10.v20130312</jetty.version>
+    <!-- do not change jetty version to 9.3 or later as it requires JDK 8 -->
+    <jetty.version>9.2.11.v20150529</jetty.version>
+    <maven.deploy.repo.classifier></maven.deploy.repo.classifier>
     <license.skip>true</license.skip>
-    <findbugs.xmlOutput>true</findbugs.xmlOutput>
-    <findbugs.failOnError>false</findbugs.failOnError>
-    <findbugs.skip>false</findbugs.skip>
-    <postNoticeText>The initial developer of the original code is&#xA;DataTorrent, Inc. (http://www.datatorrent.com)&#xA;Copyright (c) 2012 - 2015. All Rights Reserved.</postNoticeText>
   </properties>
 
   <dependencies>
@@ -95,26 +62,18 @@
         <artifactId>license-maven-plugin</artifactId>
         <version>2.11</version>
         <configuration>
-          <header>header.txt</header>
+          <header>license.txt</header>
           <properties>
-            <owner>Apache Software Foundation</owner>
-            <email>dev@apex.incubator.apache.org</email>
+            <owner>DataTorrent, Inc.</owner>
+            <email>apex-dev@googlegroups.com</email>
           </properties>
           <excludes>
-            <exclude>**/*.iml</exclude>
-            <exclude>DISCLAIMER</exclude>
-            <exclude>LICENSE</exclude>
-            <exclude>NOTICE</exclude>
-            <exclude>**/NOTICE.vm</exclude>
+            <exclude>license.txt</exclude>
+            <exclude>**/*.xml</exclude>
             <exclude>**/*.md</exclude>
-            <exclude>**/*.txt</exclude>
-            <exclude>**/*.importorder</exclude>
-            <exclude>**/archetype-resources/**</exclude>
-            <exclude>misc/ide-templates/**</exclude>
+            <exclude>src/test/resources/**</exclude>
+            <exclude>src/main/resources/**</exclude>
           </excludes>
-          <mapping>
-            <dtcli>SCRIPT_STYLE</dtcli>
-          </mapping>
         </configuration>
         <executions>
           <execution>
@@ -143,9 +102,39 @@
       </plugin>
       <plugin>
         <artifactId>maven-enforcer-plugin</artifactId>
+        <version>1.0.1</version>
+        <executions>
+          <execution>
+            <id>enforce-tools</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[1.7.0,)</version>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.0.2,)</version>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
+        <version>2.14.1</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.apache.maven.surefire</groupId>
+            <artifactId>surefire-junit47</artifactId>
+            <version>2.14.1</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <excludedGroups>${test.excludedGroups}</excludedGroups>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
@@ -173,67 +162,9 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <groupId>org.apache.rat</groupId>
-        <artifactId>apache-rat-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>.gitattributes</exclude>
-            <exclude>.gitignore</exclude>
-            <exclude>.git/**</exclude>
-            <exclude>.idea/**</exclude>
-            <exclude>**/src/test/resources/**/MANIFEST.MF</exclude>
-            <exclude>**/src/test/resources/**/*.json</exclude>
-            <exclude>**/resources/META-INF/services/**</exclude>
-            <exclude>**/archetype-resources/**</exclude>
-            <exclude>**/*.md</exclude>
-            <exclude>**/*.txt</exclude>
-            <exclude>**/*.importorder</exclude>
-            <exclude>misc/ide-templates/**</exclude>
-            <exclude>**/NOTICE.vm</exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>findbugs-maven-plugin</artifactId>
-        <version>3.0.3</version>
-        <configuration>
-          <includeTests>true</includeTests>
-          <xmlOutput>${findbugs.xmlOutput}</xmlOutput>
-          <failOnError>${findbugs.failOnError}</failOnError>
-          <skip>${findbugs.skip}</skip>
-        </configuration>
-        <executions>
-          <execution>
-            <phase></phase>
-            <goals>
-              <goal>check</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
     </plugins>
     <pluginManagement>
       <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId>
-          <version>2.14.1</version>
-          <dependencies>
-            <dependency>
-              <groupId>org.apache.maven.surefire</groupId>
-              <artifactId>surefire-junit47</artifactId>
-              <version>2.14.1</version>
-            </dependency>
-          </dependencies>
-          <configuration>
-            <excludedGroups>${test.excludedGroups}</excludedGroups>
-            <systemPropertyVariables>
-              <java.io.tmpdir>${project.build.directory}</java.io.tmpdir>
-            </systemPropertyVariables>
-          </configuration>
-        </plugin>
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
           <artifactId>nbm-maven-plugin</artifactId>
@@ -273,104 +204,26 @@
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-enforcer-plugin</artifactId>
-          <version>1.4.1</version>
-          <executions>
-            <execution>
-              <id>enforce-java</id>
-              <goals>
-                <goal>enforce</goal>
-              </goals>
-              <configuration>
-                <rules>
-                  <requireJavaVersion>
-                    <version>[1.7.0,)</version>
-                    <message>Build requires Java 1.7 or above.</message>
-                  </requireJavaVersion>
-                </rules>
-              </configuration>
-            </execution>
-            <execution>
-              <id>enforce-maven</id>
-              <goals>
-                <goal>enforce</goal>
-              </goals>
-              <configuration>
-                <rules>
-                  <requireMavenVersion>
-                    <version>[3.0.5,)</version>
-                    <message>Build requires Maven 3.0.5 or above.</message>
-                  </requireMavenVersion>
-                </rules>
-              </configuration>
-            </execution>
-            <execution>
-              <id>enforce-release-dependencies</id>
-              <goals>
-                <goal>enforce</goal>
-              </goals>
-              <configuration>
-                <rules>
-                  <requireReleaseDeps>
-                    <message>Snapshots dependencies are not allowed for release build.</message>
-                    <onlyWhenRelease>true</onlyWhenRelease>
-                  </requireReleaseDeps>
-                </rules>
-              </configuration>
-            </execution>
-          </executions>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-checkstyle-plugin</artifactId>
-          <version>2.17</version>
-          <dependencies>
-            <dependency>
-              <groupId>com.puppycrawl.tools</groupId>
-              <artifactId>checkstyle</artifactId>
-              <version>6.15</version>
-            </dependency>
-          </dependencies>
+          <version>2.15</version>
           <executions>
             <execution>
               <id>checkstyle</id>
+              <phase>validate</phase>
               <goals>
                 <goal>check</goal>
               </goals>
-            </execution>
-          </executions>
-          <configuration>
-            <configLocation>apex_checks.xml</configLocation>
-            <suppressionsLocation>checkstyle-suppressions.xml</suppressionsLocation>
-            <includeTestSourceDirectory>true</includeTestSourceDirectory>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.rat</groupId>
-          <artifactId>apache-rat-plugin</artifactId>
-          <version>0.11</version>
-        </plugin>
-        <plugin>
-          <groupId>com.github.siom79.japicmp</groupId>
-          <artifactId>japicmp-maven-plugin</artifactId>
-          <version>0.6.2</version>
-          <configuration>
-            <parameter>
-              <onlyModified>true</onlyModified>
-              <accessModifier>protected</accessModifier>
-              <breakBuildOnModifications>false</breakBuildOnModifications>
-              <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-              <onlyBinaryIncompatible>false</onlyBinaryIncompatible>
-              <includeSynthetic>false</includeSynthetic>
-              <ignoreMissingClasses>false</ignoreMissingClasses>
-            </parameter>
-          </configuration>
-          <executions>
-            <execution>
-              <phase>verify</phase>
-              <goals>
-                <goal>cmp</goal>
-              </goals>
+              <configuration>
+                <includeResources>false</includeResources>
+                <checkstyleRules>
+                  <module name="Checker">
+                    <module name="FileTabCharacter">
+                      <property name="eachLine" value="true" />
+                    </module>
+                  </module>
+                </checkstyleRules>
+                <failOnViolation>true</failOnViolation>
+              </configuration>
             </execution>
           </executions>
         </plugin>
@@ -386,30 +239,30 @@
   </build>
   <profiles>
     <profile>
-      <id>apache-release</id>
+      <id>release</id>
       <modules>
       </modules>
       <properties>
         <maven.compiler.debug>false</maven.compiler.debug>
         <maven.compiler.optimize>true</maven.compiler.optimize>
         <maven.deploy.skip>false</maven.deploy.skip>
-        <distMgmtSnapshotsId>apache.snapshots.https</distMgmtSnapshotsId>
-        <distMgmtSnapshotsUrl>https://repository.apache.org/content/repositories/snapshots</distMgmtSnapshotsUrl>
-        <distMgmtReleaseId>apache.staging.https</distMgmtReleaseId>
-        <distMgmtReleaseUrl>https://repository.apache.org/service/local/staging/deploy/maven2</distMgmtReleaseUrl>
-        <distMgmtDevUrl>file://${project.build.directory}/mvn-repo</distMgmtDevUrl>
-        <sourceReleaseAssemblyDescriptor>source-release-zip-tar</sourceReleaseAssemblyDescriptor>
+        <!-- always generate on release build -->
+        <generate-revision-info-phase>generate-resources</generate-revision-info-phase>
+        <distMgmtDevUrl>internal.repo::default::file://${project.build.directory}/mvn-repo</distMgmtDevUrl>
+        <distMgmtUrl>dav:http://www.datatorrent.com:8081/nexus/content/repositories</distMgmtUrl>
         <package.prefix>/opt/datatorrent</package.prefix>
         <package.groupname>dtorrent</package.groupname>
       </properties>
       <distributionManagement>
         <repository>
-          <id>${distMgmtReleaseId}</id>
-          <url>${distMgmtReleaseUrl}</url>
+          <id>releases</id>
+          <name>DataTorrent Repository</name>
+          <url>${distMgmtUrl}/${maven.deploy.repo.classifier}releases/</url>
         </repository>
         <snapshotRepository>
-          <id>${distMgmtSnapshotsId}</id>
-          <url>${distMgmtSnapshotsUrl}</url>
+          <id>snapshots</id>
+          <name>DataTorrent Snapshots</name>
+          <url>${distMgmtUrl}/${maven.deploy.repo.classifier}snapshots/</url>
         </snapshotRepository>
       </distributionManagement>
       <build>
@@ -427,18 +280,46 @@
               </execution>
             </executions>
           </plugin>
+          <plugin>
+            <artifactId>maven-site-plugin</artifactId>
+            <version>3.2</version>
+          </plugin>
+          <plugin>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <version>2.7</version>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <executions>
+              <execution>
+                <!-- build javadoc jars per jar for publishing to maven -->
+                <id>module-javadocs</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>2.2.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
         </plugins>
       </build>
     </profile>
-    <profile>
-      <activation>
-        <file>
-          <missing>${basedir}/src/main</missing>
-        </file>
-      </activation>
-      <properties>
-        <remoteresources.skip>true</remoteresources.skip>
-      </properties>
-    </profile>
+
   </profiles>
 </project>

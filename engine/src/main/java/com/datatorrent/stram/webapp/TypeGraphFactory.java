@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.webapp;
 
@@ -27,15 +24,14 @@ import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.commons.io.IOUtils;
 
+import com.datatorrent.stram.webapp.TypeGraph.TypeGraphSerializer;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import com.datatorrent.stram.webapp.TypeGraph.TypeGraphSerializer;
-
 
 /**
  * This class keeps a precomputed index(prototype) of type graph of all classes in jdk and gateway classpath
@@ -44,7 +40,7 @@ import com.datatorrent.stram.webapp.TypeGraph.TypeGraphSerializer;
  */
 public class TypeGraphFactory
 {
-  private static final byte[] preComputeGraph;
+  private final static byte[] preComputeGraph;
 
   private static final Logger LOG = LoggerFactory.getLogger(TypeGraphFactory.class);
   
@@ -73,7 +69,7 @@ public class TypeGraphFactory
     for (String path : pathsToScan) {
       try {
         File f = new File(path);
-        if (!f.exists() || !f.getName().endsWith("jar")) {
+        if(!f.exists() || !f.getName().endsWith("jar")){
           continue;
         }
         JarFile jar = new JarFile(path);
@@ -102,12 +98,11 @@ public class TypeGraphFactory
     kryo.writeObject(output, tg);
     output.close();
     preComputeGraph = baos.toByteArray();
-    LOG.warn("The size of precomputed type graph is {} KB", preComputeGraph.length / 1024);
+    LOG.warn("The size of precomputed type graph is {} KB", preComputeGraph.length/1024);
   }
 
 
-  public static TypeGraph createTypeGraphProtoType()
-  {
+  public static TypeGraph createTypeGraphProtoType(){
     Input input = null;
     try {
       input = new Input(new ByteArrayInputStream(preComputeGraph));

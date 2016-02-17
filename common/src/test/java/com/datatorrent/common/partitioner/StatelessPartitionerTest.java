@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.common.partitioner;
 
@@ -25,13 +22,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.google.common.collect.Lists;
-
 import com.datatorrent.api.Context.OperatorContext;
-import com.datatorrent.api.DefaultOutputPort;
-import com.datatorrent.api.DefaultPartition;
-import com.datatorrent.api.Operator;
+import com.datatorrent.api.*;
 import com.datatorrent.api.Operator.InputPort;
-import com.datatorrent.api.Partitioner;
 import com.datatorrent.api.Partitioner.Partition;
 import com.datatorrent.api.StringCodec.Object2String;
 
@@ -101,7 +94,7 @@ public class StatelessPartitionerTest
     Collection<Partition<DummyOperator>> newPartitions = statelessPartitioner.definePartitions(partitions, new PartitioningContextImpl(null, 0));
     Assert.assertEquals("Incorrect number of partitions", 1, newPartitions.size());
 
-    for (Partition<DummyOperator> partition : newPartitions) {
+    for(Partition<DummyOperator> partition: newPartitions) {
       Assert.assertEquals("Incorrect cloned value", 5, partition.getPartitionedInstance().getValue());
     }
   }
@@ -119,7 +112,7 @@ public class StatelessPartitionerTest
     Collection<Partition<DummyOperator>> newPartitions = statelessPartitioner.definePartitions(partitions, new PartitioningContextImpl(null, 0));
     Assert.assertEquals("Incorrect number of partitions", 5, newPartitions.size());
 
-    for (Partition<DummyOperator> partition : newPartitions) {
+    for(Partition<DummyOperator> partition: newPartitions) {
       Assert.assertEquals("Incorrect cloned value", 5, partition.getPartitionedInstance().getValue());
     }
   }
@@ -142,7 +135,7 @@ public class StatelessPartitionerTest
     partitions.add(new DefaultPartition<DummyOperator>(dummyOperator));
 
     Collection<Partition<DummyOperator>> newPartitions = statelessPartitioner.definePartitions(partitions,
-        new PartitioningContextImpl(null, 5));
+      new PartitioningContextImpl(null, 5));
     Assert.assertEquals("after partition", 5, newPartitions.size());
   }
 
@@ -159,7 +152,7 @@ public class StatelessPartitionerTest
     }
 
     Collection<Partition<DummyOperator>> newPartitions = statelessPartitioner.definePartitions(partitions,
-        new PartitioningContextImpl(null, 1));
+      new PartitioningContextImpl(null, 1));
     Assert.assertEquals("after partition", 1, newPartitions.size());
   }
 

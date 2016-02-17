@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.stream;
 
@@ -40,7 +37,6 @@ import com.datatorrent.stram.engine.ByteCounterStream;
 import com.datatorrent.stram.engine.StreamContext;
 import com.datatorrent.stram.engine.SweepableReservoir;
 import com.datatorrent.stram.engine.WindowGenerator;
-import com.datatorrent.stram.plan.logical.StreamCodecWrapperForPersistance;
 import com.datatorrent.stram.tuple.*;
 
 /**
@@ -173,22 +169,6 @@ public class BufferServerSubscriber extends Subscriber implements ByteCounterStr
     return r;
   }
 
-  public SweepableReservoir acquireReservoirForPersistStream(String id, int capacity, StreamCodec<?> streamCodec)
-  {
-    BufferReservoir r = reservoirMap.get(id);
-    if (r == null) {
-      reservoirMap.put(id, r = new BufferReservoirForPersistStream(capacity, (StreamCodecWrapperForPersistance<Object>)streamCodec));
-      BufferReservoir[] newReservoirs = new BufferReservoir[reservoirs.length + 1];
-      newReservoirs[reservoirs.length] = r;
-      for (int i = reservoirs.length; i-- > 0;) {
-        newReservoirs[i] = reservoirs[i];
-      }
-      reservoirs = newReservoirs;
-    }
-
-    return r;
-  }
-
   @Override
   public void put(Object tuple)
   {
@@ -232,7 +212,6 @@ public class BufferServerSubscriber extends Subscriber implements ByteCounterStr
 
   class BufferReservoir extends CircularBuffer<Object> implements SweepableReservoir
   {
-    protected boolean skipObject = false;
     private Sink<Object> sink;
     int count;
 
@@ -313,7 +292,13 @@ public class BufferServerSubscriber extends Subscriber implements ByteCounterStr
               break;
 
             case PAYLOAD:
-              o = processPayload(data);
+              if (statefulSerde == null) {
+                o = serde.fromByteArray(data.getData());
+              }
+              else {
+                dsp.data = data.getData();
+                o = statefulSerde.fromDataStatePair(dsp);
+              }
               break;
 
             case CHECKPOINT:
@@ -341,29 +326,13 @@ public class BufferServerSubscriber extends Subscriber implements ByteCounterStr
           }
 
           freeFragments.offer(fm);
-          if (skipObject) {
-            skipObject = false;
-          } else {
-            for (int i = reservoirs.length; i-- > 0;) {
-              reservoirs[i].add(o);
-            }
+          for (int i = reservoirs.length; i-- > 0;) {
+            reservoirs[i].add(o);
           }
         }
       }
 
       return null;
-    }
-
-    protected Object processPayload(com.datatorrent.bufferserver.packet.Tuple data)
-    {
-      Object o;
-      if (statefulSerde == null) {
-        o = serde.fromByteArray(data.getData());
-      } else {
-        dsp.data = data.getData();
-        o = statefulSerde.fromDataStatePair(dsp);
-      }
-      return o;
     }
 
     @Override
@@ -379,28 +348,6 @@ public class BufferServerSubscriber extends Subscriber implements ByteCounterStr
       }
     }
 
-  }
-
-  public class BufferReservoirForPersistStream extends BufferReservoir
-  {
-    StreamCodecWrapperForPersistance wrapperStreamCodec;
-
-    BufferReservoirForPersistStream(int capacity, StreamCodecWrapperForPersistance<Object> streamCodec)
-    {
-      super(capacity);
-      wrapperStreamCodec = streamCodec;
-    }
-
-    @Override
-    protected Object processPayload(com.datatorrent.bufferserver.packet.Tuple data)
-    {
-      Object o = wrapperStreamCodec.fromByteArray(data.getData());
-      if (!wrapperStreamCodec.shouldCaptureEvent(o)) {
-        skipObject = true;
-      }
-
-      return o;
-    }
   }
 
   private static final Logger logger = LoggerFactory.getLogger(BufferServerSubscriber.class);

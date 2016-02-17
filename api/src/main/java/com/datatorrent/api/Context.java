@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.api;
 
@@ -25,12 +22,7 @@ import java.util.Map;
 
 import com.datatorrent.api.Attribute.AttributeMap;
 import com.datatorrent.api.Operator.ProcessingMode;
-import com.datatorrent.api.StringCodec.Class2String;
-import com.datatorrent.api.StringCodec.Collection2String;
-import com.datatorrent.api.StringCodec.Integer2String;
-import com.datatorrent.api.StringCodec.Map2String;
-import com.datatorrent.api.StringCodec.Object2String;
-import com.datatorrent.api.StringCodec.String2String;
+import com.datatorrent.api.StringCodec.*;
 import com.datatorrent.api.annotation.Stateless;
 
 /**
@@ -159,13 +151,6 @@ public interface Context
      * a generic codec.
      */
     Attribute<StreamCodec<?>> STREAM_CODEC = new Attribute<StreamCodec<?>>(new Object2String<StreamCodec<?>>());
-
-    /**
-     * Provides the tuple class which the port receives or emits. While this attribute is null by default,
-     * whether it is needed or not is controlled through the port annotation.
-     */
-    Attribute<Class<?>> TUPLE_CLASS = new Attribute<>(new Class2String<>());
-
     @SuppressWarnings("FieldNameHidesFieldInSuperclass")
     long serialVersionUID = AttributeMap.AttributeInitializer.initialize(PortContext.class);
   }
@@ -297,7 +282,7 @@ public interface Context
      * by this construct is conveyed to tracker application and influences the aggregations done on it by the tracker.
      */
     Attribute<AutoMetric.DimensionsScheme> METRICS_DIMENSIONS_SCHEME = new Attribute<AutoMetric.DimensionsScheme>(new
-        Object2String<AutoMetric.DimensionsScheme>());
+      Object2String<AutoMetric.DimensionsScheme>());
 
     /**
      * Return the operator runtime id.
@@ -339,10 +324,10 @@ public interface Context
      */
     Attribute<String> APPLICATION_DATA_LINK = new Attribute<String>(new String2String());
     /**
-     * Transport to push the stats and the metrics.
-     * If using the built-in transport, please use an AutoMetricBuiltInTransport object
+     * Transport to push the stats and the metrics, "builtin:{topic}" if STRAM should push the data directly
+     * using websocket with the given topic
      */
-    Attribute<AutoMetric.Transport> METRICS_TRANSPORT = new Attribute<>(new Object2String<AutoMetric.Transport>());
+    Attribute<String> METRICS_TRANSPORT = new Attribute<String>(new String2String());
     /**
      * Application instance identifier. An application with the same name can run in multiple instances, each with a
      * unique identifier. The identifier is set by the client that submits the application and can be used in operators

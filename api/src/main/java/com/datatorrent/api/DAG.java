@@ -1,26 +1,21 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.api;
 
 import java.io.Serializable;
-
-import org.apache.hadoop.classification.InterfaceStability;
 
 import com.datatorrent.api.Context.DAGContext;
 
@@ -54,8 +49,7 @@ public interface DAG extends DAGContext, Serializable
    * significant performance gains. Optimizations are subject to resource
    * availability.
    */
-  enum Locality
-  {
+  enum Locality {
     /**
      * Adjacent operators should be deployed into the same executing thread,
      * effectively serializing the computation. This setting is beneficial
@@ -112,38 +106,6 @@ public interface DAG extends DAGContext, Serializable
 
     public StreamMeta addSink(Operator.InputPort<?> port);
 
-    /**
-     * Persist entire stream using operator passed.
-     *
-     * @param Persist Operator name
-     * @param Operator to use for persisting
-     * @param Input port to use for persisting
-     * @return Object that describes the meta for the stream.
-     */
-    public StreamMeta persistUsing(String name, Operator persistOperator, Operator.InputPort<?> persistOperatorInputPort);
-
-    /**
-     * Set locality for the stream. The setting is best-effort, engine can
-     * override due to other settings or constraints.
-     *
-     * @param Persist Operator name
-     * @param Operator to use for persisting
-     * @return Object that describes the meta for the stream.
-     */
-    public StreamMeta persistUsing(String name, Operator persistOperator);
-
-    /**
-     * Set locality for the stream. The setting is best-effort, engine can
-     * override due to other settings or constraints.
-     *
-     * @param Persist Operator name
-     * @param Operator to use for persisting
-     * @param Input port to use for persisting
-     * @param Sink to persist
-     * @return Object that describes the meta for the stream.
-     */
-    public StreamMeta persistUsing(String name, Operator persistOperator, Operator.InputPort<?> persistOperatorInputPort, Operator.InputPort<?> sinkToPersist);
-
   }
 
   /**
@@ -158,14 +120,6 @@ public interface DAG extends DAGContext, Serializable
     public InputPortMeta getMeta(Operator.InputPort<?> port);
 
     public OutputPortMeta getMeta(Operator.OutputPort<?> port);
-  }
-
-  @InterfaceStability.Evolving
-  interface ModuleMeta extends Serializable, Context
-  {
-    String getName();
-
-    Module getModule();
   }
 
   /**
@@ -189,12 +143,6 @@ public interface DAG extends DAGContext, Serializable
    * @return Instance of the operator that has been added to the DAG.
    */
   public abstract <T extends Operator> T addOperator(String name, T operator);
-
-  @InterfaceStability.Evolving
-  <T extends Module> T addModule(String name, Class<T> moduleClass);
-
-  @InterfaceStability.Evolving
-  <T extends Module> T addModule(String name, T module);
 
   /**
    * <p>addStream.</p>
@@ -273,15 +221,9 @@ public interface DAG extends DAGContext, Serializable
    */
   public abstract OperatorMeta getOperatorMeta(String operatorId);
 
-  @InterfaceStability.Evolving
-  ModuleMeta getModuleMeta(String moduleId);
-
   /**
    * <p>getMeta.</p>
    */
   public abstract OperatorMeta getMeta(Operator operator);
-
-  @InterfaceStability.Evolving
-  ModuleMeta getMeta(Module module);
 
 }

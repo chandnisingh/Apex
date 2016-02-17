@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.api;
 
@@ -189,7 +186,7 @@ public class Attribute<T> implements Serializable
       public DefaultAttributeMap clone() throws CloneNotSupportedException
       {
         DefaultAttributeMap clone = (DefaultAttributeMap)super.clone();
-        clone.map = (HashMap<Attribute<?>, Object>)map.clone();
+        clone.map = (HashMap< Attribute< ?>, Object>)map.clone();
         return clone;
       }
 
@@ -255,7 +252,8 @@ public class Attribute<T> implements Serializable
               result.put(attribute, context.getValue(attribute));
             }
           }
-        } catch (Exception ex) {
+        }
+        catch (Exception ex) {
           DTThrowable.rethrow(ex);
         }
         return result;
@@ -297,13 +295,17 @@ public class Attribute<T> implements Serializable
                   Class<?> klass = attribute.defaultValue.getClass();
                   if (klass == String.class) {
                     codec = new String2String();
-                  } else if (klass == Integer.class) {
+                  }
+                  else if (klass == Integer.class) {
                     codec = new Integer2String();
-                  } else if (klass == Long.class) {
+                  }
+                  else if (klass == Long.class) {
                     codec = new Long2String();
-                  } else if (klass == Boolean.class) {
+                  }
+                  else if (klass == Boolean.class) {
                     codec = new Boolean2String();
-                  } else if (Enum.class.isAssignableFrom(klass)) {
+                  }
+                  else if (Enum.class.isAssignableFrom(klass)) {
                     codec = new Enum2String(klass);
                   }
                 }
@@ -317,7 +319,8 @@ public class Attribute<T> implements Serializable
               set.add(attribute);
             }
           }
-        } catch (Exception ex) {
+        }
+        catch (Exception ex) {
           DTThrowable.rethrow(ex);
         }
         map.put(clazz, set);

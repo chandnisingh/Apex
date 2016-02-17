@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.bufferserver.support;
 
@@ -34,8 +31,7 @@ public class Subscriber extends com.datatorrent.bufferserver.client.Subscriber
 {
   public final ArrayList<Object> resetPayloads = new ArrayList<Object>();
   public AtomicInteger tupleCount = new AtomicInteger(0);
-  public WindowIdHolder firstPayload;
-  public WindowIdHolder lastPayload;
+  public WindowIdHolder firstPayload, lastPayload;
 
   public Subscriber(String id)
   {
@@ -43,8 +39,7 @@ public class Subscriber extends com.datatorrent.bufferserver.client.Subscriber
   }
 
   @Override
-  public void activate(final String version, final String type, final String sourceId, final int mask,
-      final Collection<Integer> partitions, final long windowId, final int bufferSize)
+  public void activate(String version, String type, String sourceId, int mask, Collection<Integer> partitions, long windowId, int bufferSize)
   {
     tupleCount.set(0);
     firstPayload = lastPayload = null;
@@ -68,9 +63,6 @@ public class Subscriber extends com.datatorrent.bufferserver.client.Subscriber
 
       case RESET_WINDOW:
         resetWindow(tuple.getBaseSeconds(), tuple.getWindowWidth());
-        break;
-
-      default:
         break;
     }
   }

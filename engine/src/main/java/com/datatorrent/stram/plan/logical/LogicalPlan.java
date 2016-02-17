@@ -1,20 +1,17 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.datatorrent.stram.plan.logical;
 
@@ -24,7 +21,6 @@ import java.beans.PropertyDescriptor;
 import java.io.*;
 import java.lang.reflect.*;
 import java.util.*;
-import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.validation.*;
@@ -32,31 +28,28 @@ import javax.validation.constraints.NotNull;
 
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang.builder.ToStringStyle;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Sets;
 
 import com.datatorrent.api.*;
-import com.datatorrent.api.Attribute.AttributeMap;
 import com.datatorrent.api.Attribute.AttributeMap.DefaultAttributeMap;
-import com.datatorrent.api.Module.ProxyInputPort;
-import com.datatorrent.api.Module.ProxyOutputPort;
 import com.datatorrent.api.Operator.InputPort;
 import com.datatorrent.api.Operator.OutputPort;
 import com.datatorrent.api.Operator.Unifier;
 import com.datatorrent.api.annotation.InputPortFieldAnnotation;
 import com.datatorrent.api.annotation.OperatorAnnotation;
 import com.datatorrent.api.annotation.OutputPortFieldAnnotation;
+
 import com.datatorrent.common.experimental.AppData;
 import com.datatorrent.common.metric.MetricsAggregator;
 import com.datatorrent.common.metric.SingleMetricAggregator;
 import com.datatorrent.common.metric.sum.DoubleSumAggregator;
 import com.datatorrent.common.metric.sum.LongSumAggregator;
+import com.datatorrent.common.util.BaseOperator;
 import com.datatorrent.common.util.FSStorageAgent;
 import com.datatorrent.stram.engine.DefaultUnifier;
 import com.datatorrent.stram.engine.Slider;
@@ -76,12 +69,6 @@ import com.datatorrent.stram.engine.Slider;
  */
 public class LogicalPlan implements Serializable, DAG
 {
-  /**
-   * Attribute of input port.
-   * This is a read-only attribute to query whether the input port is connected to a DelayOperator
-   * This is for iterative processing.
-   */
-  public static final Attribute<Boolean> IS_CONNECTED_TO_DELAY_OPERATOR = new Attribute<>(false);
   @SuppressWarnings("FieldNameHidesFieldInSuperclass")
   private static final long serialVersionUID = -2099729915606048704L;
   private static final Logger LOG = LoggerFactory.getLogger(LogicalPlan.class);
@@ -89,7 +76,6 @@ public class LogicalPlan implements Serializable, DAG
   public static final String SER_FILE_NAME = "dt-conf.ser";
   public static final String LAUNCH_CONFIG_FILE_NAME = "dt-launch-config.xml";
   private static final transient AtomicInteger logicalOperatorSequencer = new AtomicInteger();
-  public static final String MODULE_NAMESPACE_SEPARATOR = "$";
 
   /**
    * Constant
@@ -117,6 +103,8 @@ public class LogicalPlan implements Serializable, DAG
   public static Attribute<Long> RM_TOKEN_LIFE_TIME = new Attribute<Long>(YarnConfiguration.DELEGATION_TOKEN_MAX_LIFETIME_DEFAULT);
   public static Attribute<String> KEY_TAB_FILE = new Attribute<String>((String) null, new StringCodec.String2String());
   public static Attribute<Double> TOKEN_REFRESH_ANTICIPATORY_FACTOR = new Attribute<Double>(0.7);
+  public static Attribute<String> LICENSE = new Attribute<String>((String) null, new StringCodec.String2String());
+  public static Attribute<String> LICENSE_ROOT = new Attribute<String>((String) null, new StringCodec.String2String());
   /**
    * Comma separated list of jar file dependencies to be deployed with the application.
    * The launcher will combine the list with built-in dependencies and those specified
@@ -145,21 +133,16 @@ public class LogicalPlan implements Serializable, DAG
    */
   public static Attribute<Integer> CONTAINERS_MAX_COUNT = new Attribute<Integer>(Integer.MAX_VALUE);
 
-  /**
-   * The application attempt ID from YARN
-   */
-  public static Attribute<Integer> APPLICATION_ATTEMPT_ID = new Attribute<>(1);
-
   static {
     Attribute.AttributeMap.AttributeInitializer.initialize(LogicalPlan.class);
   }
 
   private final Map<String, StreamMeta> streams = new HashMap<String, StreamMeta>();
   private final Map<String, OperatorMeta> operators = new HashMap<String, OperatorMeta>();
-  public final Map<String, ModuleMeta> modules = new LinkedHashMap<>();
   private final List<OperatorMeta> rootOperators = new ArrayList<OperatorMeta>();
   private final Attribute.AttributeMap attributes = new DefaultAttributeMap();
-  private transient Map<String, ArrayListMultimap<OutputPort<?>, InputPort<?>>> streamLinks = new HashMap<>();
+  private transient int nodeIndex = 0; // used for cycle validation
+  private transient Stack<OperatorMeta> stack = new Stack<OperatorMeta>(); // used for cycle validation
 
   @Override
   public Attribute.AttributeMap getAttributes()
@@ -203,8 +186,6 @@ public class LogicalPlan implements Serializable, DAG
     private InputPortFieldAnnotation portAnnotation;
     private AppData.QueryPort adqAnnotation;
     private final Attribute.AttributeMap attributes = new DefaultAttributeMap();
-    //This is null when port is not hidden
-    private Class<?> classDeclaringHiddenPort;
 
     public OperatorMeta getOperatorWrapper()
     {
@@ -283,8 +264,6 @@ public class LogicalPlan implements Serializable, DAG
     private OutputPortFieldAnnotation portAnnotation;
     private AppData.ResultPort adrAnnotation;
     private final DefaultAttributeMap attributes;
-    //This is null when port is not hidden
-    private Class<?> classDeclaringHiddenPort;
 
     public OutputPortMeta()
     {
@@ -409,19 +388,10 @@ public class LogicalPlan implements Serializable, DAG
     private final List<InputPortMeta> sinks = new ArrayList<InputPortMeta>();
     private OutputPortMeta source;
     private final String id;
-    private OperatorMeta persistOperatorForStream;
-    private InputPortMeta persistOperatorInputPort;
-    private Set<InputPortMeta> enableSinksForPersisting;
-    private String persistOperatorName;
-    public Map<InputPortMeta, OperatorMeta> sinkSpecificPersistOperatorMap;
-    public Map<InputPortMeta, InputPortMeta> sinkSpecificPersistInputPortMap;
 
     private StreamMeta(String id)
     {
       this.id = id;
-      enableSinksForPersisting = new HashSet<InputPortMeta>();
-      sinkSpecificPersistOperatorMap = new HashMap<LogicalPlan.InputPortMeta, OperatorMeta>();
-      sinkSpecificPersistInputPortMap = new HashMap<LogicalPlan.InputPortMeta, InputPortMeta>();
     }
 
     @Override
@@ -431,14 +401,12 @@ public class LogicalPlan implements Serializable, DAG
     }
 
     @Override
-    public Locality getLocality()
-    {
+    public Locality getLocality() {
       return this.locality;
     }
 
     @Override
-    public StreamMeta setLocality(Locality locality)
-    {
+    public StreamMeta setLocality(Locality locality) {
       this.locality = locality;
       return this;
     }
@@ -488,26 +456,12 @@ public class LogicalPlan implements Serializable, DAG
       return this;
     }
 
-    public void remove()
-    {
+    public void remove() {
       for (InputPortMeta ipm : this.sinks) {
         ipm.getOperatorWrapper().inputStreams.remove(ipm);
         if (ipm.getOperatorWrapper().inputStreams.isEmpty()) {
           rootOperators.add(ipm.getOperatorWrapper());
         }
-      }
-      // Remove persist operator for at stream level if present:
-      if (getPersistOperator() != null) {
-        removeOperator(getPersistOperator().getOperator());
-      }
-
-      // Remove persist operators added for specific sinks :
-      if (!sinkSpecificPersistOperatorMap.isEmpty()) {
-        for (Entry<InputPortMeta, OperatorMeta> entry : sinkSpecificPersistOperatorMap.entrySet()) {
-          removeOperator(entry.getValue().getOperator());
-        }
-        sinkSpecificPersistOperatorMap.clear();
-        sinkSpecificPersistInputPortMap.clear();
       }
       this.sinks.clear();
       if (this.source != null) {
@@ -560,169 +514,6 @@ public class LogicalPlan implements Serializable, DAG
       return !((this.id == null) ? (other.id != null) : !this.id.equals(other.id));
     }
 
-    @Override
-    public StreamMeta persistUsing(String name, Operator persistOperator, InputPort<?> port)
-    {
-      persistOperatorName = name;
-      enablePersistingForSinksAddedSoFar(persistOperator);
-      OperatorMeta persistOpMeta = createPersistOperatorMeta(persistOperator);
-      if (!persistOpMeta.getPortMapping().inPortMap.containsKey(port)) {
-        String msg = String.format("Port argument %s does not belong to persist operator passed %s", port, persistOperator);
-        throw new IllegalArgumentException(msg);
-      }
-
-      setPersistOperatorInputPort(persistOpMeta.getPortMapping().inPortMap.get(port));
-
-      return this;
-    }
-
-    @Override
-    public StreamMeta persistUsing(String name, Operator persistOperator)
-    {
-      persistOperatorName = name;
-      enablePersistingForSinksAddedSoFar(persistOperator);
-      OperatorMeta persistOpMeta = createPersistOperatorMeta(persistOperator);
-      InputPortMeta port = persistOpMeta.getPortMapping().inPortMap.values().iterator().next();
-      setPersistOperatorInputPort(port);
-      return this;
-    }
-
-    private void enablePersistingForSinksAddedSoFar(Operator persistOperator)
-    {
-      for (InputPortMeta portMeta : getSinks()) {
-        enableSinksForPersisting.add(portMeta);
-      }
-    }
-
-    private OperatorMeta createPersistOperatorMeta(Operator persistOperator)
-    {
-      addOperator(persistOperatorName, persistOperator);
-      OperatorMeta persistOpMeta = getOperatorMeta(persistOperatorName);
-      setPersistOperator(persistOpMeta);
-      if (persistOpMeta.getPortMapping().inPortMap.isEmpty()) {
-        String msg = String.format("Persist operator passed %s has no input ports to connect", persistOperator);
-        throw new IllegalArgumentException(msg);
-      }
-      Map<InputPort<?>, InputPortMeta> inputPortMap = persistOpMeta.getPortMapping().inPortMap;
-      int nonOptionalInputPortCount = 0;
-      for (InputPortMeta inputPort : inputPortMap.values()) {
-        if (inputPort.portAnnotation == null || !inputPort.portAnnotation.optional()) {
-          // By default input port is non-optional unless specified
-          nonOptionalInputPortCount++;
-        }
-      }
-
-      if (nonOptionalInputPortCount > 1) {
-        String msg = String.format("Persist operator %s has more than 1 non optional input port", persistOperator);
-        throw new IllegalArgumentException(msg);
-      }
-
-      Map<OutputPort<?>, OutputPortMeta> outputPortMap = persistOpMeta.getPortMapping().outPortMap;
-      for (OutputPortMeta outPort : outputPortMap.values()) {
-        if (outPort.portAnnotation != null && !outPort.portAnnotation.optional()) {
-          // By default output port is optional unless specified
-          String msg = String.format("Persist operator %s has non optional output port %s", persistOperator, outPort.fieldName);
-          throw new IllegalArgumentException(msg);
-        }
-      }
-      return persistOpMeta;
-    }
-
-    public OperatorMeta getPersistOperator()
-    {
-      return persistOperatorForStream;
-    }
-
-    private void setPersistOperator(OperatorMeta persistOperator)
-    {
-      this.persistOperatorForStream = persistOperator;
-    }
-
-    public InputPortMeta getPersistOperatorInputPort()
-    {
-      return persistOperatorInputPort;
-    }
-
-    private void setPersistOperatorInputPort(InputPortMeta inport)
-    {
-      this.addSink(inport.getPortObject());
-      this.persistOperatorInputPort = inport;
-    }
-
-    public Set<InputPortMeta> getSinksToPersist()
-    {
-      return enableSinksForPersisting;
-    }
-
-    private String getPersistOperatorName(Operator operator)
-    {
-      return id + "_persister";
-    }
-
-    private String getPersistOperatorName(InputPort<?> sinkToPersist)
-    {
-      InputPortMeta portMeta = assertGetPortMeta(sinkToPersist);
-      OperatorMeta operatorMeta = portMeta.getOperatorWrapper();
-      return id + "_" + operatorMeta.getName() + "_persister";
-    }
-
-    @Override
-    public StreamMeta persistUsing(String name, Operator persistOperator, InputPort<?> port, InputPort<?> sinkToPersist)
-    {
-      // When persist Stream is invoked for a specific sink, persist operator can directly be added
-      String persistOperatorName = name;
-      addOperator(persistOperatorName, persistOperator);
-      addSink(port);
-      InputPortMeta sinkPortMeta = assertGetPortMeta(sinkToPersist);
-      addStreamCodec(sinkPortMeta, port);
-      updateSinkSpecificPersistOperatorMap(sinkPortMeta, persistOperatorName, port);
-      return this;
-    }
-
-    private void addStreamCodec(InputPortMeta sinkToPersistPortMeta, InputPort<?> port)
-    {
-      StreamCodec<Object> inputStreamCodec = sinkToPersistPortMeta.getValue(PortContext.STREAM_CODEC) != null ? (StreamCodec<Object>) sinkToPersistPortMeta.getValue(PortContext.STREAM_CODEC) : (StreamCodec<Object>) sinkToPersistPortMeta.getPortObject().getStreamCodec();
-      if (inputStreamCodec != null) {
-        Map<InputPortMeta, StreamCodec<Object>> codecs = new HashMap<InputPortMeta, StreamCodec<Object>>();
-        codecs.put(sinkToPersistPortMeta, inputStreamCodec);
-        InputPortMeta persistOperatorPortMeta = assertGetPortMeta(port);
-        StreamCodec<Object> specifiedCodecForPersistOperator = (persistOperatorPortMeta.getValue(PortContext.STREAM_CODEC) != null) ? (StreamCodec<Object>) persistOperatorPortMeta.getValue(PortContext.STREAM_CODEC) : (StreamCodec<Object>) port.getStreamCodec();
-        StreamCodecWrapperForPersistance<Object> codec = new StreamCodecWrapperForPersistance<Object>(codecs, specifiedCodecForPersistOperator);
-        setInputPortAttribute(port, PortContext.STREAM_CODEC, codec);
-      }
-    }
-
-    private void updateSinkSpecificPersistOperatorMap(InputPortMeta sinkToPersistPortMeta, String persistOperatorName, InputPort<?> persistOperatorInPort)
-    {
-      OperatorMeta persistOpMeta = operators.get(persistOperatorName);
-      this.sinkSpecificPersistOperatorMap.put(sinkToPersistPortMeta, persistOpMeta);
-      this.sinkSpecificPersistInputPortMap.put(sinkToPersistPortMeta, persistOpMeta.getMeta(persistOperatorInPort));
-    }
-
-    public void resetStreamPersistanceOnSinkRemoval(InputPortMeta sinkBeingRemoved)
-    {
-     /*
-      * If persistStream was enabled for the entire stream and the operator
-      * to be removed was the only one enabled for persisting, Remove the persist operator
-      */
-      if (enableSinksForPersisting.contains(sinkBeingRemoved)) {
-        enableSinksForPersisting.remove(sinkBeingRemoved);
-        if (enableSinksForPersisting.isEmpty()) {
-          removeOperator(getPersistOperator().getOperator());
-          setPersistOperator(null);
-        }
-      }
-
-      // If persisting was added specific to this sink, remove the persist operator
-      if (sinkSpecificPersistInputPortMap.containsKey(sinkBeingRemoved)) {
-        sinkSpecificPersistInputPortMap.remove(sinkBeingRemoved);
-      }
-      if (sinkSpecificPersistOperatorMap.containsKey(sinkBeingRemoved)) {
-        OperatorMeta persistOpMeta = sinkSpecificPersistOperatorMap.get(sinkBeingRemoved);
-        sinkSpecificPersistOperatorMap.remove(sinkBeingRemoved);
-        removeOperator(persistOpMeta.getOperator());
-      }
-    }
   }
 
   /**
@@ -743,7 +534,6 @@ public class LogicalPlan implements Serializable, DAG
     private transient Integer lowlink; // for cycle detection
     private transient Operator operator;
     private MetricAggregatorMeta metricAggregatorMeta;
-    private String moduleName;  // Name of the module which has this operator. null if this is a top level operator.
 
     /*
      * Used for  OIO validation,
@@ -830,22 +620,9 @@ public class LogicalPlan implements Serializable, DAG
       return metricAggregatorMeta;
     }
 
-    public String getModuleName()
-    {
-      return moduleName;
-    }
-
-    public void setModuleName(String moduleName)
-    {
-      this.moduleName = moduleName;
-    }
-
     protected void populateAggregatorMeta()
     {
       AutoMetric.Aggregator aggregator = getValue(OperatorContext.METRICS_AGGREGATOR);
-      if (aggregator == null && operator instanceof AutoMetric.Aggregator) {
-        aggregator = new MetricAggregatorMeta.MetricsAggregatorProxy(this);
-      }
       if (aggregator == null) {
         MetricsAggregator defAggregator = null;
         Set<String> metricNames = Sets.newHashSet();
@@ -914,45 +691,6 @@ public class LogicalPlan implements Serializable, DAG
         getValue(OperatorContext.METRICS_DIMENSIONS_SCHEME));
     }
 
-    /**
-     * Copy attribute from source attributeMap to destination attributeMap.
-     *
-     * @param dest  destination attribute map.
-     * @param source source attribute map.
-     */
-    private void copyAttributes(AttributeMap dest, AttributeMap source)
-    {
-      for (Entry<Attribute<?>, ?> a : source.entrySet()) {
-        dest.put((Attribute<Object>)a.getKey(), a.getValue());
-      }
-    }
-
-    /**
-     * Copy attribute of operator and port from provided operatorMeta. This function requires
-     * operatorMeta argument is for the same operator.
-     *
-     * @param operatorMeta copy attribute from this OperatorMeta to the object.
-     */
-    private void copyAttributesFrom(OperatorMeta operatorMeta)
-    {
-      if (operator != operatorMeta.getOperator()) {
-        throw new IllegalArgumentException("Operator meta is not for the same operator ");
-      }
-
-      // copy operator attributes
-      copyAttributes(attributes, operatorMeta.getAttributes());
-
-      // copy Input port attributes
-      for (Map.Entry<InputPort<?>, InputPortMeta> entry : operatorMeta.getPortMapping().inPortMap.entrySet()) {
-        copyAttributes(getPortMapping().inPortMap.get(entry.getKey()).attributes, entry.getValue().attributes);
-      }
-
-      // copy Output port attributes
-      for (Map.Entry<OutputPort<?>, OutputPortMeta> entry : operatorMeta.getPortMapping().outPortMap.entrySet()) {
-        copyAttributes(getPortMapping().outPortMap.get(entry.getKey()).attributes, entry.getValue().attributes);
-      }
-    }
-
     private class PortMapping implements Operators.OperatorDescriptor
     {
       private final Map<Operator.InputPort<?>, InputPortMeta> inPortMap = new HashMap<Operator.InputPort<?>, InputPortMeta>();
@@ -968,7 +706,7 @@ public class LogicalPlan implements Serializable, DAG
             if (pm.operatorMeta == OperatorMeta.this && pm.fieldName.equals(field.getName())) {
               //LOG.debug("Found existing port meta for: " + field);
               inPortMap.put(portObject, pm);
-              markInputPortIfHidden(pm.getPortName(), pm, field.getDeclaringClass());
+              checkDuplicateName(pm.getPortName(), pm);
               return;
             }
           }
@@ -979,7 +717,7 @@ public class LogicalPlan implements Serializable, DAG
         metaPort.portAnnotation = portAnnotation;
         metaPort.adqAnnotation = adqAnnotation;
         inPortMap.put(portObject, metaPort);
-        markInputPortIfHidden(metaPort.getPortName(), metaPort, field.getDeclaringClass());
+        checkDuplicateName(metaPort.getPortName(), metaPort);
       }
 
       @Override
@@ -991,7 +729,7 @@ public class LogicalPlan implements Serializable, DAG
             if (pm.operatorMeta == OperatorMeta.this && pm.fieldName.equals(field.getName())) {
               //LOG.debug("Found existing port meta for: " + field);
               outPortMap.put(portObject, pm);
-              markOutputPortIfHidden(pm.getPortName(), pm, field.getDeclaringClass());
+              checkDuplicateName(pm.getPortName(), pm);
               return;
             }
           }
@@ -1002,27 +740,14 @@ public class LogicalPlan implements Serializable, DAG
         metaPort.portAnnotation = portAnnotation;
         metaPort.adrAnnotation = adrAnnotation;
         outPortMap.put(portObject, metaPort);
-        markOutputPortIfHidden(metaPort.getPortName(), metaPort, field.getDeclaringClass());
+        checkDuplicateName(metaPort.getPortName(), metaPort);
       }
 
-      private void markOutputPortIfHidden(String portName, OutputPortMeta portMeta, Class<?> declaringClass)
-      {
-        if (!portNameMap.containsKey(portName)) {
-          portNameMap.put(portName, portMeta);
-        } else {
-          // make the port optional
-          portMeta.classDeclaringHiddenPort = declaringClass;
-        }
-
-      }
-
-      private void markInputPortIfHidden(String portName, InputPortMeta portMeta, Class<?> declaringClass)
-      {
-        if (!portNameMap.containsKey(portName)) {
-          portNameMap.put(portName, portMeta);
-        } else {
-          // make the port optional
-          portMeta.classDeclaringHiddenPort = declaringClass;
+      private void checkDuplicateName(String portName, Object portMeta) {
+        Object existingValue = portNameMap.put(portName, portMeta);
+        if (existingValue != null) {
+          String msg = String.format("Port name %s of %s duplicates %s", portName, portMeta, existingValue);
+          throw new IllegalArgumentException(msg);
         }
       }
     }
@@ -1129,189 +854,21 @@ public class LogicalPlan implements Serializable, DAG
   @Override
   public <T extends Operator> T addOperator(String name, T operator)
   {
+    // TODO: optional interface to provide contextual information to instance
+    if (operator instanceof BaseOperator) {
+      ((BaseOperator)operator).setName(name);
+    }
     if (operators.containsKey(name)) {
-      if (operators.get(name).operator == operator) {
+      if (operators.get(name) == (Object)operator) {
         return operator;
       }
       throw new IllegalArgumentException("duplicate operator id: " + operators.get(name));
     }
 
-    // Avoid name conflict with module.
-    if (modules.containsKey(name)) {
-      throw new IllegalArgumentException("duplicate operator id: " + operators.get(name));
-    }
     OperatorMeta decl = new OperatorMeta(name, operator);
     rootOperators.add(decl); // will be removed when a sink is added to an input port for this operator
     operators.put(name, decl);
     return operator;
-  }
-
-  /**
-   * Module meta object.
-   */
-  public final class ModuleMeta implements DAG.ModuleMeta, Serializable
-  {
-    private final LinkedHashMap<InputPortMeta, StreamMeta> inputStreams = new LinkedHashMap<>();
-    private final LinkedHashMap<OutputPortMeta, StreamMeta> outputStreams = new LinkedHashMap<>();
-    private final Attribute.AttributeMap attributes;
-    @NotNull
-    private String name;
-    private transient Module module;
-    private ModuleMeta parent;
-    private LogicalPlan dag = null;
-    private transient String fullName;
-
-    private ModuleMeta(String name, Module module)
-    {
-      LOG.debug("Initializing {} as {}", name, module.getClass().getName());
-      this.name = name;
-      this.module = module;
-      this.attributes = new DefaultAttributeMap();
-      this.dag = new LogicalPlan();
-    }
-
-    @Override
-    public String getName()
-    {
-      return name;
-    }
-
-    @Override
-    public Module getModule()
-    {
-      return module;
-    }
-
-    @Override
-    public Attribute.AttributeMap getAttributes()
-    {
-      return attributes;
-    }
-
-    @Override
-    public <T> T getValue(Attribute<T> key)
-    {
-      return attributes.get(key);
-    }
-
-    @Override
-    public void setCounters(Object counters)
-    {
-
-    }
-
-    @Override
-    public void sendMetrics(Collection<String> metricNames)
-    {
-
-    }
-
-    public LinkedHashMap<InputPortMeta, StreamMeta> getInputStreams()
-    {
-      return inputStreams;
-    }
-
-    public LinkedHashMap<OutputPortMeta, StreamMeta> getOutputStreams()
-    {
-      return outputStreams;
-    }
-
-    public LogicalPlan getDag()
-    {
-      return dag;
-    }
-
-    private void writeObject(ObjectOutputStream out) throws IOException
-    {
-      out.defaultWriteObject();
-      FSStorageAgent.store(out, module);
-    }
-
-    private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException
-    {
-      input.defaultReadObject();
-      module = (Module)FSStorageAgent.retrieve(input);
-    }
-
-    /**
-     * Expand the module and add its operator to the parentDAG. After this method finishes the module is expanded fully
-     * with all its submodules also expanded. The parentDAG contains the operator added by all the modules.
-     *
-     * @param parentDAG parent dag to populate with operators from this and inner modules.
-     * @param conf      configuration object.
-     */
-    public void flattenModule(LogicalPlan parentDAG, Configuration conf)
-    {
-      module.populateDAG(dag, conf);
-      for (ModuleMeta subModuleMeta : dag.getAllModules()) {
-        subModuleMeta.setParent(this);
-        subModuleMeta.flattenModule(dag, conf);
-      }
-      dag.applyStreamLinks();
-      parentDAG.addDAGToCurrentDAG(this);
-    }
-
-    /**
-     * Return full name of the module. If this is a inner module, i.e module inside of module this method will traverse
-     * till the top level module, and construct the name by concatenating name of modules in the chain in reverse order
-     * separated by MODULE_NAMESPACE_SEPARATO.
-     *
-     * For example If there is module M1, which adds another module M2 in the DAG. Then the full name of the module M2
-     * is ("M1" ++ MODULE_NAMESPACE_SEPARATO + "M2")
-     *
-     * @return full name of the module.
-     */
-    public String getFullName()
-    {
-      if (fullName != null) {
-        return fullName;
-      }
-
-      if (parent == null) {
-        fullName = name;
-      } else {
-        fullName = parent.getFullName() + MODULE_NAMESPACE_SEPARATOR + name;
-      }
-      return fullName;
-    }
-
-    private void setParent(ModuleMeta meta)
-    {
-      this.parent = meta;
-    }
-
-    private static final long serialVersionUID = 7562277769188329223L;
-  }
-
-  @Override
-  public <T extends Module> T addModule(String name, T module)
-  {
-    if (modules.containsKey(name)) {
-      if (modules.get(name).module == module) {
-        return module;
-      }
-      throw new IllegalArgumentException("duplicate module is: " + modules.get(name));
-    }
-    if (operators.containsKey(name)) {
-      throw new IllegalArgumentException("duplicate module is: " + modules.get(name));
-    }
-
-    ModuleMeta meta = new ModuleMeta(name, module);
-    modules.put(name, meta);
-    return module;
-  }
-
-  @Override
-  public <T extends Module> T addModule(String name, Class<T> clazz)
-  {
-    T instance;
-    try {
-      instance = clazz.newInstance();
-    } catch (Exception ex) {
-      throw new IllegalArgumentException(ex);
-    }
-    addModule(name, instance);
-    return instance;
   }
 
   public void removeOperator(Operator operator)
@@ -1323,12 +880,9 @@ public class LogicalPlan implements Serializable, DAG
 
     Map<InputPortMeta, StreamMeta> inputStreams = om.getInputStreams();
     for (Map.Entry<InputPortMeta, StreamMeta> e : inputStreams.entrySet()) {
-      StreamMeta stream = e.getValue();
       if (e.getKey().getOperatorWrapper() == om) {
-         stream.sinks.remove(e.getKey());
+         e.getValue().sinks.remove(e.getKey());
       }
-      // If persistStream was enabled for stream, reset stream when sink removed
-      stream.resetStreamPersistanceOnSinkRemoval(e.getKey());
     }
     this.operators.remove(om.getName());
     rootOperators.remove(om);
@@ -1347,83 +901,14 @@ public class LogicalPlan implements Serializable, DAG
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public <T> StreamMeta addStream(String id, Operator.OutputPort<? extends T> source, Operator.InputPort<? super T>... sinks)
   {
     StreamMeta s = addStream(id);
-    id = s.id;
-    ArrayListMultimap<OutputPort<?>, InputPort<?>> streamMap = ArrayListMultimap.create();
-    if (!(source instanceof ProxyOutputPort)) {
-      s.setSource(source);
-    }
-    for (Operator.InputPort<?> sink : sinks) {
-      if (source instanceof ProxyOutputPort || sink instanceof ProxyInputPort) {
-        streamMap.put(source, sink);
-        streamLinks.put(id, streamMap);
-      } else {
-        if (s.getSource() == null) {
-          s.setSource(source);
-        }
-        s.addSink(sink);
-      }
+    s.setSource(source);
+    for (Operator.InputPort<?> sink: sinks) {
+      s.addSink(sink);
     }
     return s;
-  }
-
-  /**
-   * This will be called once the Logical Dag is expanded, and the proxy input and proxy output ports are populated with
-   * the actual ports that they refer to This method adds sources and sinks for the StreamMeta objects which were left
-   * empty in the addStream call.
-   */
-  public void applyStreamLinks()
-  {
-    for (String id : streamLinks.keySet()) {
-      StreamMeta s = getStream(id);
-      for (Map.Entry<Operator.OutputPort<?>, Operator.InputPort<?>> pair : streamLinks.get(id).entries()) {
-        if (s.getSource() == null) {
-          Operator.OutputPort<?> outputPort = pair.getKey();
-          while (outputPort instanceof ProxyOutputPort) {
-            outputPort = ((ProxyOutputPort<?>)outputPort).get();
-          }
-          s.setSource(outputPort);
-        }
-
-        Operator.InputPort<?> inputPort = pair.getValue();
-        while (inputPort instanceof ProxyInputPort) {
-          inputPort = ((ProxyInputPort<?>)inputPort).get();
-        }
-        s.addSink(inputPort);
-      }
-    }
-  }
-
-  @SuppressWarnings({ "unchecked", "rawtypes" })
-  private void addDAGToCurrentDAG(ModuleMeta moduleMeta)
-  {
-    LogicalPlan subDag = moduleMeta.getDag();
-    String subDAGName = moduleMeta.getName();
-    String name;
-    for (OperatorMeta operatorMeta : subDag.getAllOperators()) {
-      name = subDAGName + MODULE_NAMESPACE_SEPARATOR + operatorMeta.getName();
-      Operator op = this.addOperator(name, operatorMeta.getOperator());
-      OperatorMeta operatorMetaNew = this.getMeta(op);
-      operatorMetaNew.copyAttributesFrom(operatorMeta);
-      operatorMetaNew.setModuleName(operatorMeta.getModuleName() == null ? subDAGName :
-          subDAGName + MODULE_NAMESPACE_SEPARATOR + operatorMeta.getModuleName());
-    }
-
-    for (StreamMeta streamMeta : subDag.getAllStreams()) {
-      OutputPortMeta sourceMeta = streamMeta.getSource();
-      List<InputPort<?>> ports = new LinkedList<>();
-      for (InputPortMeta inputPortMeta : streamMeta.getSinks()) {
-        ports.add(inputPortMeta.getPortObject());
-      }
-      InputPort[] inputPorts = ports.toArray(new InputPort[]{});
-
-      name = subDAGName + MODULE_NAMESPACE_SEPARATOR + streamMeta.getName();
-      StreamMeta streamMetaNew = this.addStream(name, sourceMeta.getPortObject(), inputPorts);
-      streamMetaNew.setLocality(streamMeta.getLocality());
-    }
   }
 
   @Override
@@ -1474,7 +959,7 @@ public class LogicalPlan implements Serializable, DAG
 
   private OutputPortMeta assertGetPortMeta(Operator.OutputPort<?> port)
   {
-    for (OperatorMeta o : getAllOperators()) {
+    for (OperatorMeta o: getAllOperators()) {
       OutputPortMeta opm = o.getPortMapping().outPortMap.get(port);
       if (opm != null) {
         return opm;
@@ -1485,7 +970,7 @@ public class LogicalPlan implements Serializable, DAG
 
   private InputPortMeta assertGetPortMeta(Operator.InputPort<?> port)
   {
-    for (OperatorMeta o : getAllOperators()) {
+    for (OperatorMeta o: getAllOperators()) {
       InputPortMeta opm = o.getPortMapping().inPortMap.get(port);
       if (opm != null) {
         return opm;
@@ -1522,11 +1007,6 @@ public class LogicalPlan implements Serializable, DAG
     return Collections.unmodifiableCollection(this.operators.values());
   }
 
-  public Collection<ModuleMeta> getAllModules()
-  {
-    return Collections.unmodifiableCollection(this.modules.values());
-  }
-
   public Collection<StreamMeta> getAllStreams()
   {
     return Collections.unmodifiableCollection(this.streams.values());
@@ -1539,12 +1019,6 @@ public class LogicalPlan implements Serializable, DAG
   }
 
   @Override
-  public ModuleMeta getModuleMeta(String moduleName)
-  {
-    return this.modules.get(moduleName);
-  }
-
-  @Override
   public OperatorMeta getMeta(Operator operator)
   {
     // TODO: cache mapping
@@ -1554,17 +1028,6 @@ public class LogicalPlan implements Serializable, DAG
       }
     }
     throw new IllegalArgumentException("Operator not associated with the DAG: " + operator);
-  }
-
-  @Override
-  public ModuleMeta getMeta(Module module)
-  {
-    for (ModuleMeta m : getAllModules()) {
-      if (m.module == module) {
-        return m;
-      }
-    }
-    throw new IllegalArgumentException("Module not associated with the DAG: " + module);
   }
 
   public int getMaxContainerCount()
@@ -1626,24 +1089,6 @@ public class LogicalPlan implements Serializable, DAG
     return classNames;
   }
 
-  public static class ValidationContext
-  {
-    public int nodeIndex = 0;
-    public Stack<OperatorMeta> stack = new Stack<OperatorMeta>();
-    public Stack<OperatorMeta> path = new Stack<OperatorMeta>();
-    public List<Set<OperatorMeta>> stronglyConnected = new ArrayList<>();
-    public OperatorMeta invalidLoopAt;
-    public List<Set<OperatorMeta>> invalidCycles = new ArrayList<>();
-  }
-
-  public void resetNIndex()
-  {
-    for (OperatorMeta om : getAllOperators()) {
-      om.lowlink = null;
-      om.nindex = null;
-    }
-  }
-
   /**
    * Validate the plan. Includes checks that required ports are connected,
    * required configuration parameters specified, graph free of cycles etc.
@@ -1655,8 +1100,6 @@ public class LogicalPlan implements Serializable, DAG
     ValidatorFactory factory =
             Validation.buildDefaultValidatorFactory();
     Validator validator = factory.getValidator();
-
-    checkAttributeValueSerializable(this.getAttributes(), DAG.class.getName());
 
     // clear oioRoot values in all operators
     for (OperatorMeta n: operators.values()) {
@@ -1681,8 +1124,6 @@ public class LogicalPlan implements Serializable, DAG
       }
 
       OperatorMeta.PortMapping portMapping = n.getPortMapping();
-
-      checkAttributeValueSerializable(n.getAttributes(), n.getName());
 
       // Check operator annotation
       if (n.operatorAnnotation != null) {
@@ -1716,17 +1157,12 @@ public class LogicalPlan implements Serializable, DAG
 
       // check that non-optional ports are connected
       for (InputPortMeta pm: portMapping.inPortMap.values()) {
-        checkAttributeValueSerializable(pm.getAttributes(), n.getName() + "." + pm.getPortName());
         StreamMeta sm = n.inputStreams.get(pm);
         if (sm == null) {
-          if ((pm.portAnnotation == null || !pm.portAnnotation.optional()) && pm.classDeclaringHiddenPort == null) {
+          if (pm.portAnnotation == null || !pm.portAnnotation.optional()) {
             throw new ValidationException("Input port connection required: " + n.name + "." + pm.getPortName());
           }
         } else {
-          if (pm.classDeclaringHiddenPort != null) {
-            throw new ValidationException(String.format("Invalid port connected: %s.%s is hidden by %s.%s", pm.classDeclaringHiddenPort.getName(),
-              pm.getPortName(), pm.operatorMeta.getOperator().getClass().getName(), pm.getPortName()));
-          }
           // check locality constraints
           DAG.Locality locality = sm.getLocality();
           if (locality == DAG.Locality.THREAD_LOCAL) {
@@ -1734,34 +1170,14 @@ public class LogicalPlan implements Serializable, DAG
               validateThreadLocal(n);
             }
           }
-
-          if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
-            //since schema is required, the port attribute TUPLE_CLASS should be present
-            if (pm.attributes.get(PortContext.TUPLE_CLASS) == null) {
-              throw new ValidationException("Attribute " + PortContext.TUPLE_CLASS.getName() + " missing on port : " + n.name + "." + pm.getPortName());
-            }
-          }
         }
       }
 
       boolean allPortsOptional = true;
       for (OutputPortMeta pm: portMapping.outPortMap.values()) {
-        checkAttributeValueSerializable(pm.getAttributes(), n.getName() + "." + pm.getPortName());
         if (!n.outputStreams.containsKey(pm)) {
-          if ((pm.portAnnotation != null && !pm.portAnnotation.optional()) && pm.classDeclaringHiddenPort == null) {
+          if (pm.portAnnotation != null && !pm.portAnnotation.optional()) {
             throw new ValidationException("Output port connection required: " + n.name + "." + pm.getPortName());
-          }
-        } else {
-          //port is connected
-          if (pm.classDeclaringHiddenPort != null) {
-            throw new ValidationException(String.format("Invalid port connected: %s.%s is hidden by %s.%s", pm.classDeclaringHiddenPort.getName(),
-              pm.getPortName(), pm.operatorMeta.getOperator().getClass().getName(), pm.getPortName()));
-          }
-          if (pm.portAnnotation != null && pm.portAnnotation.schemaRequired()) {
-            //since schema is required, the port attribute TUPLE_CLASS should be present
-            if (pm.attributes.get(PortContext.TUPLE_CLASS) == null) {
-              throw new ValidationException("Attribute " + PortContext.TUPLE_CLASS.getName() + " missing on port : " + n.name + "." + pm.getPortName());
-            }
           }
         }
         allPortsOptional &= (pm.portAnnotation != null && pm.portAnnotation.optional());
@@ -1770,36 +1186,25 @@ public class LogicalPlan implements Serializable, DAG
         throw new ValidationException("At least one output port must be connected: " + n.name);
       }
     }
+    stack = new Stack<OperatorMeta>();
 
-    ValidationContext validatonContext = new ValidationContext();
+    List<List<String>> cycles = new ArrayList<List<String>>();
     for (OperatorMeta n: operators.values()) {
       if (n.nindex == null) {
-        findStronglyConnected(n, validatonContext);
+        findStronglyConnected(n, cycles);
       }
     }
-    if (!validatonContext.invalidCycles.isEmpty()) {
-      throw new ValidationException("Loops in graph: " + validatonContext.invalidCycles);
-    }
-
-    List<List<String>> invalidDelays = new ArrayList<>();
-    for (OperatorMeta n : rootOperators) {
-      findInvalidDelays(n, invalidDelays, new Stack<OperatorMeta>());
-    }
-    if (!invalidDelays.isEmpty()) {
-      throw new ValidationException("Invalid delays in graph: " + invalidDelays);
+    if (!cycles.isEmpty()) {
+      throw new ValidationException("Loops in graph: " + cycles);
     }
 
     for (StreamMeta s: streams.values()) {
-      if (s.source == null) {
-        throw new ValidationException("Stream source not connected: " + s.getName());
-      }
-
-      if (s.sinks.isEmpty()) {
-        throw new ValidationException("Stream sink not connected: " + s.getName());
+      if (s.source == null || (s.sinks.isEmpty())) {
+        throw new ValidationException(String.format("stream not connected: %s", s.getName()));
       }
     }
 
-    // Validate root operators are input operators
+    // Validate root operators are input operators 
     for (OperatorMeta om : this.rootOperators) {
       if (!(om.getOperator() instanceof InputOperator)) {
         throw new ValidationException(String.format("Root operator: %s is not a Input operator",
@@ -1813,22 +1218,6 @@ public class LogicalPlan implements Serializable, DAG
       validateProcessingMode(om, visited);
     }
 
-  }
-
-  private void checkAttributeValueSerializable(AttributeMap attributes, String context)
-  {
-    StringBuilder sb = new StringBuilder();
-    String delim = "";
-    // Check all attributes got operator are serializable
-    for (Entry<Attribute<?>, Object> entry : attributes.entrySet()) {
-      if (entry.getValue() != null && !(entry.getValue() instanceof Serializable)) {
-        sb.append(delim).append(entry.getKey().getSimpleName());
-        delim = ", ";
-      }
-    }
-    if (sb.length() > 0) {
-      throw new ValidationException("Attribute value(s) for " + sb.toString() + " in " + context + " are not serializable");
-    }
   }
 
   /*
@@ -1845,11 +1234,6 @@ public class LogicalPlan implements Serializable, DAG
       return;
     }
 
-    if (om.getOperator() instanceof Operator.DelayOperator) {
-      String msg = String.format("Locality %s invalid for delay operator %s", Locality.THREAD_LOCAL, om);
-      throw new ValidationException(msg);
-    }
-
     for (StreamMeta sm: om.inputStreams.values()){
       // validation fail as each input stream should be OIO
       if (sm.locality != Locality.THREAD_LOCAL){
@@ -1858,10 +1242,6 @@ public class LogicalPlan implements Serializable, DAG
         throw new ValidationException(msg);
       }
 
-      if (sm.source.operatorMeta.getOperator() instanceof Operator.DelayOperator) {
-        String msg = String.format("Locality %s invalid for delay operator %s", Locality.THREAD_LOCAL, sm.source.operatorMeta);
-        throw new ValidationException(msg);
-      }
       // gets oio root for input operator for the stream
       Integer oioStreamRoot = getOioRoot(sm.source.operatorMeta);
 
@@ -1925,13 +1305,12 @@ public class LogicalPlan implements Serializable, DAG
    * @param om
    * @param cycles
    */
-  public void findStronglyConnected(OperatorMeta om, ValidationContext ctx)
+  public void findStronglyConnected(OperatorMeta om, List<List<String>> cycles)
   {
-    om.nindex = ctx.nodeIndex;
-    om.lowlink = ctx.nodeIndex;
-    ctx.nodeIndex++;
-    ctx.stack.push(om);
-    ctx.path.push(om);
+    om.nindex = nodeIndex;
+    om.lowlink = nodeIndex;
+    nodeIndex++;
+    stack.push(om);
 
     // depth first successors traversal
     for (StreamMeta downStream: om.outputStreams.values()) {
@@ -1942,84 +1321,35 @@ public class LogicalPlan implements Serializable, DAG
         }
         // check for self referencing node
         if (om == successor) {
-          ctx.invalidCycles.add(Collections.singleton(om));
+          cycles.add(Collections.singletonList(om.name));
         }
         if (successor.nindex == null) {
           // not visited yet
-          findStronglyConnected(successor, ctx);
+          findStronglyConnected(successor, cycles);
           om.lowlink = Math.min(om.lowlink, successor.lowlink);
         }
-        else if (ctx.stack.contains(successor)) {
+        else if (stack.contains(successor)) {
           om.lowlink = Math.min(om.lowlink, successor.nindex);
-          boolean isDelayLoop = false;
-          for (int i=ctx.path.size(); i>0; i--) {
-            OperatorMeta om2 = ctx.path.get(i-1);
-            if (om2.getOperator() instanceof Operator.DelayOperator) {
-              isDelayLoop = true;
-            }
-            if (om2 == successor) {
-              break;
-            }
-          }
-          if (!isDelayLoop) {
-            ctx.invalidLoopAt = successor;
-          }
         }
       }
     }
 
     // pop stack for all root operators
     if (om.lowlink.equals(om.nindex)) {
-      Set<OperatorMeta> connectedSet = new LinkedHashSet<>(ctx.stack.size());
-      while (!ctx.stack.isEmpty()) {
-        OperatorMeta n2 = ctx.stack.pop();
-        connectedSet.add(n2);
+      List<String> connectedIds = new ArrayList<String>();
+      while (!stack.isEmpty()) {
+        OperatorMeta n2 = stack.pop();
+        connectedIds.add(n2.name);
         if (n2 == om) {
           break; // collected all connected operators
         }
       }
       // strongly connected (cycle) if more than one node in stack
-      if (connectedSet.size() > 1) {
-        ctx.stronglyConnected.add(connectedSet);
-        if (connectedSet.contains(ctx.invalidLoopAt)) {
-          ctx.invalidCycles.add(connectedSet);
-        }
+      if (connectedIds.size() > 1) {
+        LOG.debug("detected cycle from node {}: {}", om.name, connectedIds);
+        cycles.add(connectedIds);
       }
     }
-    ctx.path.pop();
-
-  }
-
-  public void findInvalidDelays(OperatorMeta om, List<List<String>> invalidDelays, Stack<OperatorMeta> stack)
-  {
-    stack.push(om);
-
-    // depth first successors traversal
-    boolean isDelayOperator = om.getOperator() instanceof Operator.DelayOperator;
-    if (isDelayOperator) {
-      if (om.getValue(OperatorContext.APPLICATION_WINDOW_COUNT) != 1) {
-        LOG.debug("detected DelayOperator having APPLICATION_WINDOW_COUNT not equal to 1");
-        invalidDelays.add(Collections.singletonList(om.getName()));
-      }
-    }
-
-    for (StreamMeta downStream: om.outputStreams.values()) {
-      for (InputPortMeta sink : downStream.sinks) {
-        OperatorMeta successor = sink.getOperatorWrapper();
-        if (isDelayOperator) {
-          sink.attributes.put(IS_CONNECTED_TO_DELAY_OPERATOR, true);
-          // Check whether all downstream operators are already visited in the path
-          if (successor != null && !stack.contains(successor)) {
-            LOG.debug("detected DelayOperator does not immediately output to a visited operator {}.{}->{}.{}",
-                om.getName(), downStream.getSource().getPortName(), successor.getName(), sink.getPortName());
-            invalidDelays.add(Arrays.asList(om.getName(), successor.getName()));
-          }
-        } else {
-          findInvalidDelays(successor, invalidDelays, stack);
-        }
-      }
-    }
-    stack.pop();
   }
 
   private void validateProcessingMode(OperatorMeta om, Set<OperatorMeta> visited)
@@ -2149,4 +1479,39 @@ public class LogicalPlan implements Serializable, DAG
     return result;
   }
 
+  public final class MetricAggregatorMeta implements Serializable
+  {
+    private final AutoMetric.Aggregator aggregator;
+    private final AutoMetric.DimensionsScheme dimensionsScheme;
+
+    protected MetricAggregatorMeta(AutoMetric.Aggregator aggregator,
+                                   AutoMetric.DimensionsScheme dimensionsScheme)
+    {
+      this.aggregator = aggregator;
+      this.dimensionsScheme = dimensionsScheme;
+    }
+
+    public AutoMetric.Aggregator getAggregator()
+    {
+      return this.aggregator;
+    }
+
+    public String[] getDimensionAggregatorsFor(String logicalMetricName)
+    {
+      if (dimensionsScheme == null) {
+        return null;
+      }
+      return dimensionsScheme.getDimensionAggregationsFor(logicalMetricName);
+    }
+
+    public String[] getTimeBuckets()
+    {
+      if (dimensionsScheme == null) {
+        return null;
+      }
+      return dimensionsScheme.getTimeBuckets();
+    }
+
+    private static final long serialVersionUID = 201604271719L;
+  }
 }
